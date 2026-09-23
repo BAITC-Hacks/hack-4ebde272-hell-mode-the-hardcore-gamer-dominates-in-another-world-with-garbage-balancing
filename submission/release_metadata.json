@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "status": "complete",
-  "run_id": "f4c16f10-bf89-4b9d-8c58-59bea5f85c83",
-  "started_at": "2026-09-23T11:10:31.691044Z",
-  "completed_at": "2026-09-23T11:10:42.341302Z",
-  "runtime_seconds": 8.115235,
+  "run_id": "f35dd311-b92a-473c-82b7-dfc62a7160e4",
+  "started_at": "2026-09-23T11:51:26.054591Z",
+  "completed_at": "2026-09-23T11:51:30.225175Z",
+  "runtime_seconds": 4.170597,
   "command": [
     "python",
     "main.py",
@@ -64,30 +64,33 @@
     "node_features": "sha256:7b9b4b312e52775a7b7c09a23d60ad85906c1e36ded17502add87ac5a083fc10"
   },
   "rule_versions": {
-    "src/schema.py": "sha256:ad068d0b8a64061483ffd28b2ad2d53433097a4426f9b7557da0f19141b80557",
-    "src/loader.py": "sha256:4466708cd91170330afe02842edc9357512aad93d0e61b1e665283004fd1a7c3",
-    "src/graph_features.py": "sha256:7fc918098038442310af665f2124b09bda74c718ad0816142254270100edce6a",
-    "src/temporal.py": "sha256:86e60203dba79810e4aa8453e47bf234fa71b1adf9eb17815125f1018e405d93",
-    "src/clustering.py": "sha256:e104600614690ae1e6bf4d0e7a3ad2fe53eb5b4180b39c8ee9f2f83812db3b95",
-    "src/roles.py": "sha256:448018a15dcd17282ef3059a1b049ce1213044cb34f8c8b3ec8f54b80f0e818a",
-    "src/priority.py": "sha256:c471215a131d1f7dae5eaf1dc9d02b42fa1308398e283a9997f8b348d066a293",
-    "src/explanations.py": "sha256:8c07cade72765b5b720d0e265bc5592c434bdb3bd1d14e91d7a9bba12313d4f7",
-    "src/exports.py": "sha256:d32e90d176a5b4e180596080fb12bb9bb833152b47383f800a39b697e27ea47c",
-    "src/resilience.py": "sha256:5d1cbb06ff06bda3bebc64b79e26148684121f10e1aa4b9d130c4572f2c982d5",
-    "validate_submission.py": "sha256:8dbb8a010549b500475e979ef3a552d8fcfe1fed3489d8f139c61643fd9154c0",
-    "pipeline.py": "sha256:1537e29566ccc83c1d0cd117e1bbeb44cf23b8754b56142ea100abffe983c054",
-    "main.py": "sha256:6f9a91fdcf3a0b1da1dd0bc528a673b8b9188c1b97878b1b5c54ba47e382437a",
-    "documentation/feature-contract.md": "sha256:6c31fd00defeae500d842450f3bdc742da4910b0fb849f085af42949d8f7eef0",
-    "documentation/data-quality.md": "sha256:80f0262f70d5fa95c9930138fc053bd98a0f0b5c8005ea8601574dc6bfbcb8ac",
-    "documentation/decision-rules.md": "sha256:df242b88e35e217aa8e50e9414009c292b49da216f9f5fb8d25ab189f9ffb42f",
-    "requirements.txt": "sha256:164992585014bc55865e4bd44012e0c86245953efd0f7285a8526f7d0c5b0e8c",
-    "requirements-dev.txt": "sha256:826977da14a68ad2e78f079cce05a2f6d64f9d25ccd67c33c48326560288b79e",
-    "constraints.txt": "sha256:d2391364f0e487d6d0aeedf1741b28d53a264b7e973e3552e178fcabcf97a25f"
+    "src/schema.py": "sha256:1c3f33ad777edd418b96612f8611af418319109a5ab601473e7267cef3a5a876",
+    "src/loader.py": "sha256:382a51bb196b8c214ef44ae4812795eebbd2e5e2d374e2b17a47ce9fcb62d315",
+    "src/graph_features.py": "sha256:0600d028b76c44588bc6cad5fa81a01eb24e39452d48a6e7cc3af16838410d34",
+    "src/temporal.py": "sha256:05dee021eb47a6a05171aa3554a8fc4b74345f6d8cd3fce32c5cc73c8fc83d0b",
+    "src/clustering.py": "sha256:1bf68328d8c88c1291f1fc178fa98e8ee9d457f283473a704fe1bfe7a7a83ee7",
+    "src/roles.py": "sha256:9abe199e256da30e38a5a05e758b9ebc06755736bb349c8070d457ae8db80bf3",
+    "src/priority.py": "sha256:71f52fb46efa98b2ae26c3ddfd723b45aea00d4e598a342816b72c8d82b5226f",
+    "src/explanations.py": "sha256:209f2999c2eadec6c1e8d3addd7885ed5c8814e22accb51daf98559c443a1048",
+    "src/exports.py": "sha256:a0797b9bb856c2a71047e6b464b341bff4433eb8d1f48c1634e75ed21828db22",
+    "src/resilience.py": "sha256:03ff33123296cc24c17350fa2e17de214c529dfdaf7c641cffe86022316b00fa",
+    "validate_submission.py": "sha256:62b9ed4ea7ea9dc7d9ef6c58626ff409572a729258c3e1b60e151534640d8f91",
+    "pipeline.py": "sha256:323d9464bea433869451fe39b40ea05cd4278f80b2c5d3dc025a01b2445ca5fc",
+    "main.py": "sha256:d2fb1152ac7518912249b4b35a3e40b10beeb01387b1dfae947578f29ffa123c",
+    "app.py": "sha256:8bae87d38b2f06bce354a8b613581bba838fd085e876062a891b643c8838123d",
+    "src/workspace.py": "sha256:d708a215c27f7013d76ea0c67c1cac88101907f13e69ed04f9c73bd8c5599e99",
+    "src/ai_assistant.py": "sha256:f6ea06720e4d3506a494e52e44d561bca4646f28155e07bcd58da2b7ceb0d761",
+    "documentation/feature-contract.md": "sha256:11d1215d9deb366b9705c283b15d7d743b854b36dc4b2c4d8e7a480e96c5f2a0",
+    "documentation/data-quality.md": "sha256:6c0ac35fe7aa213b4fa7ceb498dd655b165439612b53801fcb2717f8fef1a99c",
+    "documentation/decision-rules.md": "sha256:32f36da6730d0dac8d53ba0d3e53f4f0a4821a7243d09ba6bfebfcbcece02826",
+    "requirements.txt": "sha256:587473f801fb1b7fde993d18c98542721e38f4b18c479457deb1016aac35b376",
+    "requirements-dev.txt": "sha256:cb2bf3b1216c09300c178cf696525e5728528d20df3b735b992aadf8023c287e",
+    "constraints.txt": "sha256:cdf4a220d50df3ceac549fbe0bc3e54e55b6fb58dfeb27b59b81b5054de6c353"
   },
   "environment": {
     "python": "3.11.16",
     "implementation": "CPython",
-    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.41",
+    "platform": "Linux-6.10.14-linuxkit-aarch64-with-glibc2.41",
     "packages": {
       "pandas": "3.0.6",
       "numpy": "2.4.6",
@@ -100,11 +103,11 @@
     }
   },
   "git": {
-    "revision": "e075b643a1c9272905316b522f4cf426274047f3",
+    "revision": "c0a137a635b982edea69aa25e7c8aa18648c57f6",
     "dirty": null,
     "source": "environment"
   },
   "validation": "strict artifact consistency; analytical interpretation remains a separate review",
   "package_type": "submission",
-  "analytics_run_metadata_sha256": "666b8ea7c2847fcd149e5bbec1f610b17be2efb8562dd7353eb86e2e5aaaad3e"
+  "analytics_run_metadata_sha256": "e38419595d9dedde0ee63921a4fd7a3a1ba980e7cf245ef93d0bcf8b061b0991"
 }
