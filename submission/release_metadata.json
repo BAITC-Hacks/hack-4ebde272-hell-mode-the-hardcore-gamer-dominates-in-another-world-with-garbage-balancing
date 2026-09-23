@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "status": "complete",
-  "run_id": "52a88928-1997-4664-97fd-33f7fe96515d",
-  "started_at": "2026-09-23T10:58:57.460569Z",
-  "completed_at": "2026-09-23T10:59:01.670496Z",
-  "runtime_seconds": 4.209944,
+  "run_id": "f4c16f10-bf89-4b9d-8c58-59bea5f85c83",
+  "started_at": "2026-09-23T11:10:31.691044Z",
+  "completed_at": "2026-09-23T11:10:42.341302Z",
+  "runtime_seconds": 8.115235,
   "command": [
     "python",
     "main.py",
@@ -44,39 +44,42 @@
   },
   "outputs": {
     "nodes_roles.csv": {
-      "sha256": "13cff8dca0146000d995fee6a49dc518a43f7845707a454adc08532f3214e0a2",
-      "size_bytes": 266641,
+      "sha256": "c01bb782305afc7ddabe6c535fd7c269743e00107c22efa58dd8a509ec2ad7e1",
+      "size_bytes": 436969,
       "rows": 2248
     },
     "clusters.csv": {
-      "sha256": "f56aba0bf09a3fe92f2fd0b10f17d90285e5a0aacc87ebfcab5270cce6576028",
-      "size_bytes": 10591,
+      "sha256": "0118ad6aa0bc2e068ee83a216a2ea5e8aaa9117e5fc6c1c4f59039e0a001fda7",
+      "size_bytes": 10568,
       "rows": 91
     },
     "top_nodes.csv": {
-      "sha256": "172694dda5dd991037abebdc6782c690d60133463f538726d02b084d19309a53",
-      "size_bytes": 5503,
+      "sha256": "124df588e4ef65de2718806451c1b1f4d9c208d98a2b835a16a008231f94a446",
+      "size_bytes": 9782,
       "rows": 50
     }
   },
   "schema_versions": {
     "submission": "1",
-    "node_features": "sha256:54a25ef526548562086dcf9de7a6b16c0a50fd1033e8892cd4661ebac203498c"
+    "node_features": "sha256:7b9b4b312e52775a7b7c09a23d60ad85906c1e36ded17502add87ac5a083fc10"
   },
   "rule_versions": {
-    "src/schema.py": "sha256:8e4d8a26ed05a53a4b1261de0a2cbe90115a00b48800964698e058d1f03f3044",
-    "src/loader.py": "sha256:c0cf3386228d7eacd89575c8ff04df053fab689479c8767d7691a092edd6ee29",
-    "src/graph_features.py": "sha256:ea2092b37e55c278a1b49ff58d26adbaa6048f1556bff4799a44fe6b6baf30ae",
-    "src/temporal.py": "sha256:58077c3dd99a94d3961e984f3bac08b4139a8257917d0e2b5e366d16d7c8e30c",
-    "src/clustering.py": "sha256:793bbddc06a861ff5f148404119641dc26c1826c0c0e9f1cbb3c832735f5c9f1",
-    "src/roles.py": "sha256:64cdce6c7f8489306d36601cf6a1bb54f7e3e7356c6ad8f7b6df58b654b96412",
-    "src/priority.py": "sha256:9276c8e87de160112e75c3304b38ebab77e1b2423279713af8eaecc696a5b267",
-    "src/explanations.py": "sha256:1fcc24865d27e92e755cd4e35dd5ee9c09729cc8810073f9d163cd77b7182070",
-    "src/exports.py": "sha256:f5538659c8dc183756c60219d5fba45cb0cda277de7ffbeba3343e5a96778e6b",
-    "src/resilience.py": "sha256:4e336a3f90be75dc2ae38d04a1124014a404afaacab4582a6c0c9da4236e1c12",
-    "validate_submission.py": "sha256:cd40d1b026945a9dd2ad129ffdd39c0e4e1685a6af2d6cf40e5c61d96aaba589",
-    "pipeline.py": "sha256:4d3963847bd4b011b40e32596416ddfdb58c3c0bb8cce6b780300159ce5af62f",
+    "src/schema.py": "sha256:ad068d0b8a64061483ffd28b2ad2d53433097a4426f9b7557da0f19141b80557",
+    "src/loader.py": "sha256:4466708cd91170330afe02842edc9357512aad93d0e61b1e665283004fd1a7c3",
+    "src/graph_features.py": "sha256:7fc918098038442310af665f2124b09bda74c718ad0816142254270100edce6a",
+    "src/temporal.py": "sha256:86e60203dba79810e4aa8453e47bf234fa71b1adf9eb17815125f1018e405d93",
+    "src/clustering.py": "sha256:e104600614690ae1e6bf4d0e7a3ad2fe53eb5b4180b39c8ee9f2f83812db3b95",
+    "src/roles.py": "sha256:448018a15dcd17282ef3059a1b049ce1213044cb34f8c8b3ec8f54b80f0e818a",
+    "src/priority.py": "sha256:c471215a131d1f7dae5eaf1dc9d02b42fa1308398e283a9997f8b348d066a293",
+    "src/explanations.py": "sha256:8c07cade72765b5b720d0e265bc5592c434bdb3bd1d14e91d7a9bba12313d4f7",
+    "src/exports.py": "sha256:d32e90d176a5b4e180596080fb12bb9bb833152b47383f800a39b697e27ea47c",
+    "src/resilience.py": "sha256:5d1cbb06ff06bda3bebc64b79e26148684121f10e1aa4b9d130c4572f2c982d5",
+    "validate_submission.py": "sha256:8dbb8a010549b500475e979ef3a552d8fcfe1fed3489d8f139c61643fd9154c0",
+    "pipeline.py": "sha256:1537e29566ccc83c1d0cd117e1bbeb44cf23b8754b56142ea100abffe983c054",
     "main.py": "sha256:6f9a91fdcf3a0b1da1dd0bc528a673b8b9188c1b97878b1b5c54ba47e382437a",
+    "documentation/feature-contract.md": "sha256:6c31fd00defeae500d842450f3bdc742da4910b0fb849f085af42949d8f7eef0",
+    "documentation/data-quality.md": "sha256:80f0262f70d5fa95c9930138fc053bd98a0f0b5c8005ea8601574dc6bfbcb8ac",
+    "documentation/decision-rules.md": "sha256:df242b88e35e217aa8e50e9414009c292b49da216f9f5fb8d25ab189f9ffb42f",
     "requirements.txt": "sha256:164992585014bc55865e4bd44012e0c86245953efd0f7285a8526f7d0c5b0e8c",
     "requirements-dev.txt": "sha256:826977da14a68ad2e78f079cce05a2f6d64f9d25ccd67c33c48326560288b79e",
     "constraints.txt": "sha256:d2391364f0e487d6d0aeedf1741b28d53a264b7e973e3552e178fcabcf97a25f"
@@ -97,11 +100,11 @@
     }
   },
   "git": {
-    "revision": "d05b9f8ee756f1dd1ad2d974e8bbd9f0b4841721",
+    "revision": "e075b643a1c9272905316b522f4cf426274047f3",
     "dirty": null,
     "source": "environment"
   },
   "validation": "strict artifact consistency; analytical interpretation remains a separate review",
   "package_type": "submission",
-  "analytics_run_metadata_sha256": "d781b616a4771691f3f0801b119e766f33fac8c1a4deeb15a9f4ec86ae4c87b2"
+  "analytics_run_metadata_sha256": "666b8ea7c2847fcd149e5bbec1f610b17be2efb8562dd7353eb86e2e5aaaad3e"
 }
