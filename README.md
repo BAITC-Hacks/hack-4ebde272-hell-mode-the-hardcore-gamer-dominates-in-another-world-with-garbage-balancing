@@ -88,7 +88,7 @@ See [DEMO.md](DEMO.md) for exact examples and the release verification record
 under `submission/` for tested commands, runtime and integration limitations.
 The [integration verification report](documentation/integration-verification.md)
 records the merged baseline. The latest [final acceptance record](documentation/final-acceptance.md)
-covers the completed analyst workflow, **604 passing tests** and presentation/LLM limits.
+covers the completed analyst workflow, **618 passing tests** and presentation/LLM limits.
 
 ## Investigation workflow
 
@@ -131,6 +131,11 @@ exact supplied gid, including isolated seeds.
 The **Why** column copies the published `top_nodes.csv.why` text for its ranked
 accounts. Other accounts show their exported full-run priority explanation.
 The selected row's complete reason is also displayed below the table.
+
+Categorical charts use horizontal bars and readable labels, with chart height
+adjusted to the category count. Daily activity uses short horizontal date labels
+and a legend above the plot. Network hover cards show plain multiline text with
+wrapping so IDs and account details remain readable in narrow views.
 
 **Network explorer** defaults to a small neighborhood. Arrows show payment
 direction, edge width scales logarithmically with KZT, and hover carries amount

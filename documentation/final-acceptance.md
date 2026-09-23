@@ -32,6 +32,10 @@ the merged baseline; this record covers the final workflow improvements.
   while the key is blank. Compose includes the SDK; tests exercise the actual
   SDK using an in-memory HTTP transport, including authentication/quota/service
   errors, without external requests or a real credential.
+- Chart categories remain horizontal in overview, community and resilience
+  views; daily dates use short horizontal labels. Node hover details use wrapped
+  plain text, preserving exact gids without showing formatting tags. Real
+  Chromium checks both narrow tooltips and labels containing hostile HTML.
 - README, architecture and the five-minute demo now follow the complete analyst
   path. The demo starts with an actual live calculation and includes three real
   cases, an arbitrary-gid challenge, and the final review/export handoff.
@@ -68,9 +72,9 @@ This maps evidence to the rubric; it does not predict the jury's score.
 
 ## Verification commands
 
-**604 tests passed in 104.23 seconds**, with no failures or skips, under the pinned
+**618 tests passed in 107.46 seconds**, with no failures or skips, under the pinned
 Python 3.11 Docker test environment with runtime networking disabled. The final
-browser test completed in 27.43 seconds. Sources were mounted read-only. The
+browser test completed in 28.67 seconds. Sources were mounted read-only. The
 installed OpenAI SDK was exercised through in-memory HTTP responses; no live
 API request was made. All 2,248 node explanations fit in 183 characters or fewer.
 
