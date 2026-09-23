@@ -158,7 +158,8 @@ class GraphInvestigationTools:
             "found": not members.empty,
             "cluster_id": cluster_id,
             "member_count": int(len(members)),
-            "top_gids": _json_safe(members.sort_values("priority_score", ascending=False)
+            "top_gids": _json_safe(members.sort_values(
+                ["priority_score", "gid"], ascending=[False, True], kind="stable")
                               .head(10)["gid"].tolist()) if "priority_score" in members else [],
         }
         if not exported.empty:
@@ -176,8 +177,12 @@ class GraphInvestigationTools:
         return {
             "found": True,
             "gid": gid,
-            "inbound": _json_safe(inbound.sort_values("sum_kzt", ascending=False).head(limit)[fields].to_dict("records")),
-            "outbound": _json_safe(outbound.sort_values("sum_kzt", ascending=False).head(limit)[fields].to_dict("records")),
+            "inbound": _json_safe(inbound.sort_values(
+                ["sum_kzt", "src", "dst"], ascending=[False, True, True], kind="stable")
+                .head(limit)[fields].to_dict("records")),
+            "outbound": _json_safe(outbound.sort_values(
+                ["sum_kzt", "src", "dst"], ascending=[False, True, True], kind="stable")
+                .head(limit)[fields].to_dict("records")),
         }
 
     def find_common_descendants(self, gids: list[int], max_hops: int = 4) -> dict[str, Any]:
@@ -342,6 +347,12 @@ def validate_answer(content: str, ledger: dict[str, dict[str, Any]], tools: Grap
             claim_gids = set()
             context = ""
             for ancestor in reversed(ancestors):
+                if (source["tool"] == "get_counterparties" and isinstance(ancestor, dict)
+                        and {"src", "dst"}.issubset(ancestor)):
+                    # The amount belongs to this directed relationship, not
+                    # the focus client's total or an unspecified counterparty.
+                    context = f"observed edge {ancestor['src']} → {ancestor['dst']}: "
+                    break
                 if isinstance(ancestor, dict) and "gid" in ancestor:
                     context = f"gid {ancestor['gid']}: "
                     if not missing and _exact_gid(ancestor["gid"]) in tools.graph:

@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -61,7 +62,7 @@ def test_offline_browser_rehearsal(tmp_path, monkeypatch):
                     time.sleep(0.1)
             with api.sync_playwright() as p:
                 browser = p.chromium.launch(executable_path=chromium, args=["--no-sandbox"])
-                context = browser.new_context(viewport={"width": 1440, "height": 1000})
+                context = browser.new_context(viewport={"width": 1440, "height": 1000}, accept_downloads=True)
                 external = []
 
                 def guard(route):
@@ -117,6 +118,57 @@ def test_offline_browser_rehearsal(tmp_path, monkeypatch):
                 new_run = json.loads((output / "run_metadata.json").read_text())["run_id"]
                 page.get_by_role("button", name="Reload data", exact=True).click()
                 api.expect(page.get_by_role("heading", name="Money Graph · Analyst workspace")).to_be_visible()
+                api.expect(page.get_by_text(f"Verified run: {new_run}", exact=True)).to_be_visible()
+                api.expect(page.get_by_test_id("stException")).to_have_count(0)
+
+                # Complete the brief's analyst handoff: choose exact accounts,
+                # download their evidence, then upload/run a fresh private case.
+                workspace("Investigation queue")
+                shortlist = page.get_by_role("combobox", name="Review shortlist", exact=True)
+                for gid in (boundary, isolated):
+                    shortlist.fill(gid)
+                    page.get_by_role("option", name=gid, exact=True).click()
+                api.expect(page.get_by_test_id("stException")).to_have_count(0)
+                review_download = page.get_by_test_id("stDownloadButton").filter(has_text="Download review shortlist").locator("a, button")
+                with page.expect_download() as download:
+                    review_download.click()
+                review = pd.read_csv(download.value.path(), dtype={"gid": "string"})
+                assert set(review.gid) == {boundary, isolated}
+                assert review.run_id.eq(new_run).all()
+                assert review.loc[review.gid.eq(boundary), "next_request"].str.contains("beyond hop 4").all()
+                assert review.loc[review.gid.eq(isolated), "next_request"].str.contains("isolated gid").all()
+
+                page.get_by_text("Upload case dataset", exact=True).click()
+                for name, label in (("nodes", "Nodes Parquet"), ("edges", "Edges Parquet"),
+                                    ("transactions", "Transactions Parquet")):
+                    page.get_by_label(label, exact=True).locator('input[type="file"]').set_input_files(str(ROOT / f"data/{name}.parquet"))
+                upload_run = page.get_by_role("button", name="Validate and run uploaded case", exact=True)
+                api.expect(upload_run).to_be_enabled()
+                upload_started = time.monotonic()
+                upload_run.click()
+                api.expect(page.get_by_text("Uploaded case is ready.", exact=False)).to_be_visible(timeout=60000)
+                print(f"uploaded case to verified viewer: {time.monotonic() - upload_started:.2f}s")
+                api.expect(review_download).to_be_disabled()
+                active_run_text = page.get_by_test_id("stSidebar").get_by_text("Verified run:", exact=False).inner_text()
+                assert new_run not in active_run_text
+                assert json.loads((output / "run_metadata.json").read_text())["run_id"] == new_run
+                with page.expect_download() as download:
+                    page.get_by_test_id("stDownloadButton").filter(has_text="Download submission bundle").locator("a, button").click()
+                with zipfile.ZipFile(download.value.path()) as archive:
+                    assert set(archive.namelist()) == {"nodes_roles.csv", "clusters.csv", "top_nodes.csv", "release_metadata.json"}
+                    assert len(pd.read_csv(archive.open("nodes_roles.csv"))) == 2248
+                    uploaded_run = json.loads(archive.read("release_metadata.json"))["run_id"]
+                    assert uploaded_run in active_run_text
+                # Bad replacements never evict a valid active case or overwrite
+                # the configured source/output mounts.
+                page.get_by_label("Nodes Parquet", exact=True).locator('input[type="file"]').set_input_files({
+                    "name": "nodes.parquet", "mimeType": "application/octet-stream", "buffer": b"invalid parquet",
+                })
+                api.expect(upload_run).to_be_enabled()
+                upload_run.click()
+                api.expect(page.get_by_text("Could not import uploaded case:", exact=False)).to_be_visible()
+                api.expect(page.get_by_text(f"Verified run: {uploaded_run}", exact=True)).to_be_visible()
+                page.get_by_role("button", name="Use configured dataset", exact=True).click()
                 api.expect(page.get_by_text(f"Verified run: {new_run}", exact=True)).to_be_visible()
                 api.expect(page.get_by_test_id("stException")).to_have_count(0)
                 assert not external, f"Core viewer requested external assets: {external}"

@@ -59,7 +59,8 @@ def test_metadata_associates_all_artifacts_with_inputs(completed_run):
     assert metadata["git"]["source"] in {"git", "environment", "unavailable"}
     assert metadata["schema_versions"]["submission"] == "1"
     assert metadata["schema_versions"]["node_features"].startswith("sha256:")
-    for name in ("src/roles.py", "src/priority.py", "src/graph_features.py", "src/temporal.py"):
+    for name in ("src/roles.py", "src/priority.py", "src/graph_features.py", "src/temporal.py",
+                 "app.py", "src/workspace.py", "src/ai_assistant.py"):
         assert metadata["rule_versions"][name] == "sha256:" + pipeline.file_hash(ROOT / name)
     assert metadata["inputs"]["nodes.parquet"]["rows"] == 2248
     assert metadata["inputs"]["edges.parquet"]["rows"] == 3119

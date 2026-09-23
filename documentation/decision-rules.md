@@ -101,6 +101,10 @@ and balance. A missing retained share may be derived from valid pass-through as
 `clip(1-pass_through, 0, 1)`; balance may be derived as
 `clip(1-abs(1-pass_through), 0, 1)`. These describe the sample, not account balances.
 An explicit false/missing validity flag also blocks these fallback derivations.
+Because retained share and flow balance are transformations of pass-through,
+present `pass_through_valid` and `pass_through_available` flags gate both derived
+metrics even when precomputed values were supplied. A true flag on a derived
+metric cannot override an invalid source ratio.
 
 Temporal overlap is date-level evidence. It cannot establish intraday order or
 that the same money moved onward. Relay is the share of **eligible incoming-active

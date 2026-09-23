@@ -41,6 +41,46 @@ def test_graph_tools_preserve_ids_and_support_isolated_nodes(tools):
     json.dumps(_json_safe({"a": float("nan"), "b": float("inf")}), allow_nan=False)
 
 
+def test_cluster_and_counterparty_ties_are_exact_and_independent_of_row_order():
+    gids = [100000000000000001, 100000000000000002, 100000000000000003]
+    nodes = pd.DataFrame({"gid": gids, "cluster_id": 0, "priority_score": 0.5,
+                          "is_seed": False, "depth": 1})
+    edges = pd.DataFrame({"src": [gids[0], gids[0], gids[1], gids[2]],
+                          "dst": [gids[1], gids[2], gids[0], gids[0]],
+                          "sum_kzt": 100.0, "n_tx": 1})
+    baseline = None
+    for seed in (0, 7, 42):
+        toolset = GraphInvestigationTools(nodes.sample(frac=1, random_state=seed),
+                                         pd.DataFrame(), pd.DataFrame(),
+                                         edges.sample(frac=1, random_state=seed))
+        result = (toolset.get_cluster(0), toolset.get_counterparties(gids[0], limit=1))
+        if baseline is None:
+            baseline = result
+        assert result == baseline
+        assert result[0]["top_gids"] == gids
+        assert result[1]["inbound"][0]["src"] == gids[1]
+        assert result[1]["outbound"][0]["dst"] == gids[1]
+
+
+@pytest.mark.parametrize("direction", ["inbound", "outbound"])
+def test_counterparty_amount_claim_identifies_the_exact_directed_edge(tools, direction):
+    gids = tools.nodes.gid.tolist()
+    focus = gids[1]
+    payload = _tool_payload(tools.get_counterparties(focus))
+    edge = payload[direction][0]
+    ledger = {"S1": {"tool": "get_counterparties", "arguments": {"gid": str(focus)},
+                      "result": payload}}
+    answer = validate_answer(json.dumps({"claims": [
+        {"source_id": "S1", "path": f"/{direction}/0/sum_kzt", "value": edge["sum_kzt"]},
+    ]}), ledger, tools)
+    assert f"observed edge {edge['src']} → {edge['dst']}: sum kzt" in answer.text
+    assert f"gid {focus}: sum kzt" not in answer.text
+    assert answer.node_gids == tuple(sorted((edge["src"], edge["dst"]), key=int))
+    assert answer.sources[0]["path"] == f"/{direction}/0/sum_kzt"
+    assert answer.sources[0]["value"] == edge["sum_kzt"]
+    assert answer.rejected_claims == 0
+
+
 def test_empty_edges_are_supported(tools):
     tools = GraphInvestigationTools(tools.nodes, pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
     assert tools.get_counterparties(int(tools.nodes.gid.iloc[0]))["outbound"] == []

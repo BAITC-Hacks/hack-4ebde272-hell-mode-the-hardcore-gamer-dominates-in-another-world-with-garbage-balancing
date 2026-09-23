@@ -4,13 +4,15 @@ import hashlib
 import json
 import os
 import re
+from io import BytesIO
+from types import SimpleNamespace
 from html.parser import HTMLParser
 
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from app import EXPORT_FILES, NODE_COLUMNS, SOURCE_FILES, daily_activity, evidence_records, exact_ids, load_data, merged_nodes, observed_ratio, pyvis_html, selected_neighborhood
+from app import EXPORT_FILES, NODE_COLUMNS, SOURCE_FILES, activate_uploaded_case, daily_activity, evidence_records, exact_ids, load_data, merged_nodes, observed_ratio, percentile, pyvis_html, queue_view, selected_neighborhood
 from pipeline import run
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -309,7 +311,7 @@ def test_same_size_same_timestamp_metadata_change_is_not_cached(small_export):
     assert after.metadata["run_id"] == "test-run-2"
 
 
-def test_regenerated_features_refresh_card_without_manual_reload(small_export, monkeypatch):
+def test_regenerated_features_reset_selection_and_refresh_card_without_manual_reload(small_export, monkeypatch):
     out, source, gids = small_export
     monkeypatch.setenv("MONEY_GRAPH_OUTPUT_DIR", str(out))
     monkeypatch.setenv("MONEY_GRAPH_DATA_DIR", str(source))
@@ -323,6 +325,9 @@ def test_regenerated_features_refresh_card_without_manual_reload(small_export, m
     features.to_parquet(path, index=False)
     refresh_manifest(out, source)
     ui.run()
+    # A different analytical snapshot must not retain the former case selection.
+    assert ui.text_input(key="node_gid_input").value == str(min(gids))
+    ui.text_input(key="node_gid_input").set_value(str(gids[0])).run()
     assert {item.label: item.value for item in ui.metric}["Seed reach"] == "2"
     assert not ui.error and not ui.exception
 
@@ -555,3 +560,219 @@ def test_card_renders_mixed_date_format_input(small_export, monkeypatch):
     ui.text_input(key="node_gid_input").set_value(str(gids[0])).run()
     assert not ui.error and not ui.exception
     assert len(ui.get("vega_lite_chart")) == 1
+
+
+@pytest.mark.parametrize("values,gid,expected", [
+    ([4.0], 0, "100.0th percentile"),
+    ([5.0, 5.0, 5.0], 1, "66.7th percentile"),
+    ([float("inf"), None, 3.0], 2, "100.0th percentile"),
+    ([float("inf"), None, 3.0], 0, "Not exported"),
+    ([3.0], 8, "Not exported"),
+])
+def test_ui_percentile_uses_shared_tie_missing_and_singleton_policy(values, gid, expected):
+    frame = pd.DataFrame({"gid": range(len(values)), "metric": values})
+    assert percentile(frame, "metric", gid) == expected
+
+
+def test_queue_turnover_uses_total_activity_when_available():
+    frame = pd.DataFrame({"gid": [2**63 - 1], "priority_score": [.5], "in_kzt": [10.0], "total_kzt": [30.0]})
+    assert queue_view(frame).iloc[0].turnover_kzt == 30.0
+
+
+def test_case_controls_and_submission_download_are_available(ui):
+    assert [item.proto.label for item in ui.get("file_uploader")] == [
+        "Nodes Parquet", "Edges Parquet", "Transactions Parquet",
+    ]
+    assert button(ui, "Validate and run uploaded case").disabled
+    downloads = {item.proto.label: item.proto for item in ui.get("download_button")}
+    assert "Download submission bundle" in downloads
+    assert not downloads["Download submission bundle"].disabled
+
+
+def test_submission_bundle_cannot_use_a_new_run_under_an_older_displayed_snapshot(small_export):
+    import zipfile
+    import app
+
+    out, source, _ = small_export
+    displayed = app.load_data(str(out), str(source))
+    newer = {**displayed.metadata, "run_id": "published-after-page-load"}
+    (out / "run_metadata.json").write_text(json.dumps(newer))
+    app.submission_bundle.clear()
+    with pytest.raises(ValueError, match="changed since the displayed case"):
+        app.submission_bundle(str(out), str(source), displayed.metadata)
+    payload = app.submission_bundle(str(out), str(source), newer)
+    with zipfile.ZipFile(BytesIO(payload)) as archive:
+        assert json.loads(archive.read("release_metadata.json"))["run_id"] == newer["run_id"]
+
+
+def test_cached_submission_bundle_remains_bound_to_its_original_displayed_snapshot(small_export):
+    import zipfile
+    import app
+
+    out, source, _ = small_export
+    displayed = app.load_data(str(out), str(source))
+    original = app.submission_bundle(str(out), str(source), displayed.metadata)
+    newer = {**displayed.metadata, "run_id": "published-after-download-cache"}
+    (out / "run_metadata.json").write_text(json.dumps(newer))
+    assert app.submission_bundle(str(out), str(source), displayed.metadata) == original
+    for expected in (displayed.metadata, newer):
+        payload = app.submission_bundle(str(out), str(source), expected)
+        with zipfile.ZipFile(BytesIO(payload)) as archive:
+            assert json.loads(archive.read("release_metadata.json"))["run_id"] == expected["run_id"]
+
+
+def test_review_shortlist_keeps_exact_ids_across_pages_and_filters(small_export, monkeypatch):
+    from src.workspace import build_review_csv
+    out, source, gids = small_export
+    monkeypatch.setenv("MONEY_GRAPH_OUTPUT_DIR", str(out))
+    monkeypatch.setenv("MONEY_GRAPH_DATA_DIR", str(source))
+    payloads = []
+
+    def capture(nodes, selected, metadata):
+        result = build_review_csv(nodes, selected, metadata)
+        payloads.append(result)
+        return result
+
+    monkeypatch.setattr("src.workspace.build_review_csv", capture)
+    ui = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30).run()
+    page(ui, "Investigation queue")
+    selected = [str(gids[0]), str(gids[2])]
+    ui.multiselect(key="review_shortlist_selection").set_value(selected).run()
+    assert ui.session_state["review_shortlist"] == selected
+    parsed = pd.read_csv(BytesIO(payloads[-1]), dtype={"gid": "string"})
+    assert parsed.gid.tolist() == selected
+    assert parsed.run_id.eq("test-run-1").all()
+    assert {"why", "limitations", "next_request"}.issubset(parsed.columns)
+    downloads = {item.proto.label: item.proto for item in ui.get("download_button")}
+    assert not downloads["Download review shortlist"].disabled
+    ui.multiselect(key="queue_roles").set_value(["terminal"]).run()
+    assert ui.multiselect(key="review_shortlist_selection").value == selected
+    assert len(ui.dataframe[0].value) == 1
+    page(ui, "Overview")
+    page(ui, "Investigation queue")
+    assert ui.multiselect(key="review_shortlist_selection").value == selected
+    assert not ui.exception and not ui.error
+
+
+def test_review_shortlist_and_context_reset_on_regeneration(small_export, monkeypatch):
+    out, source, gids = small_export
+    monkeypatch.setenv("MONEY_GRAPH_OUTPUT_DIR", str(out))
+    monkeypatch.setenv("MONEY_GRAPH_DATA_DIR", str(source))
+    ui = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30).run()
+    page(ui, "Investigation queue")
+    ui.multiselect(key="review_shortlist_selection").set_value([str(gids[0])]).run()
+    ui.multiselect(key="queue_roles").set_value(["terminal"]).run()
+    context = ui.session_state["active_run_context"]
+    features = pd.read_parquet(out / "node_features.parquet")
+    features.loc[0, "seed_reach_count"] = 3
+    features.to_parquet(out / "node_features.parquet", index=False)
+    refresh_manifest(out, source)  # Byte fingerprints change even with the same run id.
+    ui.run()
+    assert ui.session_state["active_run_context"] != context
+    assert ui.session_state["review_shortlist"] == []
+    assert ui.multiselect(key="review_shortlist_selection").value == []
+    assert ui.multiselect(key="queue_roles").value == []
+    downloads = {item.proto.label: item.proto for item in ui.get("download_button")}
+    assert downloads["Download review shortlist"].disabled
+    assert not ui.exception and not ui.error
+
+
+def test_uploaded_case_switch_failure_and_reset_preserve_configured_files(small_export, monkeypatch, tmp_path):
+    import shutil
+    out, source, gids = small_export
+    monkeypatch.setenv("MONEY_GRAPH_OUTPUT_DIR", str(out))
+    monkeypatch.setenv("MONEY_GRAPH_DATA_DIR", str(source))
+    before = {str(path): path.read_bytes() for parent in (out, source) for path in parent.iterdir()}
+    case_root = tmp_path / "uploaded-case"
+    case_source, case_out = case_root / "data", case_root / "out"
+    shutil.copytree(source, case_source)
+    shutil.copytree(out, case_out)
+    metadata = json.loads((case_out / "run_metadata.json").read_text())
+    metadata["run_id"] = "uploaded-case-run"
+    (case_out / "run_metadata.json").write_text(json.dumps(metadata))
+    cleaned = []
+
+    def cleanup():
+        cleaned.append(True)
+        shutil.rmtree(case_root)
+
+    candidate = SimpleNamespace(data_dir=case_source, out_dir=case_out, metadata=metadata, cleanup=cleanup)
+    uploaded_files = {}
+    monkeypatch.setattr("streamlit.file_uploader", lambda label, **kwargs: uploaded_files.get(label))
+    calls = []
+
+    def run_uploaded(files):
+        calls.append(files)
+        return candidate
+
+    monkeypatch.setattr("src.workspace.run_uploaded_case", run_uploaded)
+    ui = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30).run()
+    page(ui, "Investigation queue")
+    ui.multiselect(key="review_shortlist_selection").set_value([str(gids[0])]).run()
+    for label, filename in (("Nodes Parquet", "nodes.parquet"), ("Edges Parquet", "edges.parquet"), ("Transactions Parquet", "transactions.parquet")):
+        uploaded_files[label] = BytesIO((source / filename).read_bytes())
+    ui.run()
+    assert not button(ui, "Validate and run uploaded case").disabled
+    button(ui, "Validate and run uploaded case").click().run()
+    assert len(calls) == 1 and set(calls[0]) == set(SOURCE_FILES)
+    assert ui.session_state["uploaded_case"].out_dir == case_out
+    assert ui.session_state["review_shortlist"] == []
+    assert any("uploaded-case-run" in item.value for item in ui.sidebar.caption)
+    assert not ui.error and not ui.exception
+    assert ui.sidebar.text_input[0].value == str(out)
+    assert ui.sidebar.text_input[1].value == str(source)
+    context = ui.session_state["active_run_context"]
+
+    def invalid_upload(files):
+        raise ValueError("Deliberately invalid upload")
+
+    monkeypatch.setattr("src.workspace.run_uploaded_case", invalid_upload)
+    button(ui, "Validate and run uploaded case").click().run()
+    assert any("Deliberately invalid upload" in item.value for item in ui.error)
+    assert ui.session_state["uploaded_case"].out_dir == case_out
+    assert ui.session_state["active_run_context"] == context
+    assert not cleaned and not ui.exception
+    button(ui, "Use configured dataset").click().run()
+    assert "uploaded_case" not in ui.session_state
+    assert cleaned == [True] and not case_root.exists()
+    assert any("test-run-1" in item.value for item in ui.sidebar.caption)
+    assert all(Path(path).read_bytes() == content for path, content in before.items())
+    assert not ui.error and not ui.exception
+
+
+def test_candidate_display_failure_cleans_only_failed_case(monkeypatch):
+    import app
+    calls = []
+    previous = SimpleNamespace(cleanup=lambda: calls.append("previous"))
+    candidate = SimpleNamespace(out_dir=Path("new-out"), data_dir=Path("new-data"), cleanup=lambda: calls.append("candidate"))
+    state = {"uploaded_case": previous}
+    monkeypatch.setattr(app.st, "session_state", state)
+    monkeypatch.setattr("src.workspace.run_uploaded_case", lambda files: candidate)
+
+    def cannot_load(*args):
+        raise ValueError("Candidate data cannot be displayed")
+
+    monkeypatch.setattr(app, "load_data", cannot_load)
+    with pytest.raises(ValueError, match="cannot be displayed"):
+        activate_uploaded_case({})
+    assert state["uploaded_case"] is previous
+    assert calls == ["candidate"]
+
+
+def test_successful_upload_replacement_cleans_previous_case_after_switch(monkeypatch):
+    import app
+    state, calls = {}, []
+    candidate = SimpleNamespace(out_dir=Path("new-out"), data_dir=Path("new-data"), cleanup=lambda: calls.append("candidate"))
+
+    def cleanup_previous():
+        assert state["uploaded_case"] is candidate
+        calls.append("previous")
+
+    state["uploaded_case"] = SimpleNamespace(cleanup=cleanup_previous)
+    monkeypatch.setattr(app.st, "session_state", state)
+    monkeypatch.setattr("src.workspace.run_uploaded_case", lambda files: candidate)
+    monkeypatch.setattr(app, "load_data", lambda *args: object())
+    monkeypatch.setattr(app, "merged_nodes", lambda data: pd.DataFrame())
+    activate_uploaded_case({})
+    assert state["uploaded_case"] is candidate
+    assert calls == ["previous"]

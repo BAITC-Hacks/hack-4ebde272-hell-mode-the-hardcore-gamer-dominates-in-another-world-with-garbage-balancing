@@ -54,6 +54,10 @@ def ratio_validity_flags(name: str) -> tuple[str, ...]:
         "same_day_flow_ratio": ("same_day_flow_valid",),
         "fanin_share": ("flow_share_valid",),
         "fanout_share": ("flow_share_valid",),
+        # These are transformations of pass-through, not independent measured
+        # quantities. Precomputed values cannot outlive their source validity.
+        "retention": ("pass_through_valid", "pass_through_available"),
+        "balance_score": ("pass_through_valid", "pass_through_available"),
     }
     return (*producer_flags.get(name, ()), f"{name}_valid", f"{name}_available")
 

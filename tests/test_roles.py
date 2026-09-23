@@ -171,6 +171,32 @@ def test_explicit_invalid_flags_are_not_overridden_by_ratio_fallback():
         assert pd.isna(result[f"decision_{name}"])
 
 
+@pytest.mark.parametrize("source_flag", ["pass_through_valid", "pass_through_available"])
+@pytest.mark.parametrize("invalid", [False, np.nan, pd.NA])
+def test_invalid_pass_through_also_blocks_precomputed_retention_and_balance(source_flag, invalid):
+    row = feature_row(**{
+        source_flag: invalid, "retention": 1.0, "balance_score": 1.0,
+        "retention_valid": True, "balance_score_available": True,
+    })
+    result = assign_roles(pd.DataFrame([row])).iloc[0]
+    for metric in ("pass_through", "retention", "balance_score"):
+        assert not result[f"decision_{metric}_valid"]
+        assert pd.isna(result[f"decision_{metric}"])
+    assert result.role_consolidator_available_weight == pytest.approx(0.7)
+    assert result.role_transit_available_weight == pytest.approx(0.55)
+
+
+def test_valid_pass_through_preserves_precomputed_or_fallback_derivatives():
+    rows = [feature_row(gid=1, pass_through_valid=True, pass_through=0.8),
+            feature_row(gid=2, pass_through_valid=True, pass_through=0.8,
+                        retention=0.2, balance_score=0.8)]
+    result = assign_roles(pd.DataFrame(rows))
+    assert result.decision_retention_valid.all()
+    assert result.decision_balance_score_valid.all()
+    np.testing.assert_allclose(result.decision_retention, [0.2, 0.2])
+    np.testing.assert_allclose(result.decision_balance_score, [0.8, 0.8])
+
+
 @pytest.mark.parametrize("metric,producer_flag", [
     ("relay_2d_ratio", "relay_2d_valid"),
     ("same_day_flow_ratio", "same_day_flow_valid"),

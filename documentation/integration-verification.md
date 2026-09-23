@@ -1,5 +1,8 @@
 # Integrated technical-brief verification — 2026-09-23
 
+**Historical merged baseline.** The later [final acceptance record](final-acceptance.md)
+supersedes this snapshot for the upload/review/download workflow and current tests.
+
 ## Result and revisions
 
 The integrated software passes the checks below against the supplied HackAlem

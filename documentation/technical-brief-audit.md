@@ -6,6 +6,8 @@ Audit date: 2026-09-23. Branch: `testing`.
 [integrated verification report](integration-verification.md) for current
 requirement coverage, 461 passing tests, the final contract fix and remaining
 verification limits.
+The later [final acceptance record](final-acceptance.md) includes the completed
+upload, review shortlist and submission-download workflow.
 
 Scope: the supplied Russian HackAlem technical brief, current source, current
 local exports, Docker configuration, documentation, and existing tests. This

@@ -1,168 +1,179 @@
 # Five-minute Money Graph demo
 
-These examples were selected from the integrated Python 3.11 output, not injected
-into production decisions. The package has 2,248 node rows, 91 clusters and 50
-ranked candidates. Regenerate with:
+**Decision to demonstrate:** whom should an AML analyst review first, what observed
+pattern supports that choice, and which missing data should be requested next?
+The examples below come from the supplied July 2026 data and committed outputs;
+they are presentation cues, never inputs to the scoring algorithm.
+
+## Before the clock starts
+
+1. Follow [README](README.md) to install or build the pinned Python 3.11 runtime.
+   Dependency installation is preparation, not the measured analytical run.
+2. Open the viewer and a terminal in the repository root. Keep the three supplied
+   Parquet files ready for the sidebar upload controls. Keep the local core
+   independent of an AI key. Prepare downloads in a local folder.
+3. Check the source/run shown by the viewer. Regenerating different data can change
+   the roles, clusters and numerical examples below; refresh the cue cards first.
+4. Assign one driver, one narrator and one person to watch time and handle the jury's
+   arbitrary-gid challenge. Rehearse aloud; automated browser timing does not verify
+   a human five-minute presentation.
+
+## Timed live sequence
+
+| Time | Driver action | Narrator's point |
+|---|---|---|
+| 0:00–0:35 | Expand **Upload case dataset**. Supply **Nodes Parquet**, **Edges Parquet** and **Transactions Parquet**, then click **Validate and run uploaded case** **live**. Show the successful run and visible run ID. | “Three source files become roles for every supplied account, communities and an explained priority list. This run uses observed July intrabank transfers of at least 5,000 KZT.” |
+| 0:35–1:25 | In **Investigation queue**, filter consolidators and open **100000003115284100**. Show role evidence, priority contributions and its one-hop graph. | “Eight payers and reachability from nine seeds support collection. Its review priority is 0.974; role strength, seed convergence and path centrality explain that position.” |
+| 1:25–2:10 | Search **100000000331309100**. Open its two-hop graph and switch between role and cluster colors. | “This account sends to 99 observed recipients through 126 transfers. Its 23 million KZT outgoing volume is incomplete account context, not proof of unexplained money.” |
+| 2:10–2:50 | Open **100000003037476100** and point to the hop-4 warning and unavailable relay/retention values. | “Three payers and two upstream seeds support collection. Zero outgoing edges here cannot establish a final recipient: outgoing activity was not sampled.” |
+| 2:50–3:20 | Show **Cluster review** for cluster 14, then the baseline and top-20 **Resilience** rows. | “The community summarizes 54 accounts, one seed and 6.245 million KZT of internal transfers. Removing the priority top 20 reduces the largest observed component from 1,877 to 1,342: structural concentration, not a prediction of criminal-network collapse.” |
+| 3:20–4:20 | Let the jury name three supplied gids. Follow the four-step challenge below, about 20 seconds each. | Explain the displayed decision with actual metrics, including an observation limit when relevant. The jury chooses the identifiers. |
+| 4:20–5:00 | Return to **Investigation queue**, clear filters, select the three discussed gids in **Review shortlist**, and click **Download review shortlist**. Show its `why`, `limitations` and `next_request`. Click **Download submission bundle** in the sidebar. | “The analyst now has a selected review list with specific follow-up requests, plus the three fixed-schema jury exports. These are reproducible investigation hypotheses, not calibrated probabilities or findings of guilt.” |
+
+The upload action validates and runs the same production pipeline in a private
+temporary workspace. It does not overwrite supplied `data/` or the configured
+`out/`. Download the handoff before resetting that uploaded case; **Use configured
+dataset** restores the original read-only source/export selection. Shortlist
+selection resets when the run changes, so records from different cases do not mix.
+
+For a command-line live demonstration instead, restore the configured dataset
+and run this command from the prepared local Python 3.11 environment:
 
 ```bash
 python main.py --data data --out out --submission submission
-python main.py --data data --out out --validate-only
-python -m streamlit run app.py --browser.gatherUsageStats=false --browser.serverAddress=localhost
 ```
 
-## 0:00–0:30 — establish scope
+For the Docker command-line path, run `docker compose run --rm analytics`; the
+viewer reads the regenerated host `out/` after **Reload data**. Packaging remains
+the explicit command above. Never present pre-existing outputs as a fresh live run.
+Show the elapsed time that actually appears, rather than promising a historical
+benchmark. The requirement is source Parquets to exports in under 300 seconds.
 
-Overview: 2,248 nodes, 3,119 directed edges, 4,840 transactions, 81 seeds and
-365,890,012.01 KZT observed turnover (the metric card rounds to whole KZT).
-Say “July 2026 intrabank transfers ≥5,000 KZT, outgoing expansion to four hops.”
-Scores are review heuristics and hypotheses. No ground truth establishes
-classification accuracy or guilt.
+## Two distinct handoffs
 
-## 0:30–1:30 — collection candidate
+- **Review shortlist CSV:** analyst-selected exact gids with role, scores, evidence,
+  priority `why`, observation `limitations`, `next_request` and `run_id`. It records
+  a review decision, not a finding or an automatically sent law-enforcement request.
+- **Submission bundle ZIP:** the three unchanged fixed-schema CSVs plus
+  `release_metadata.json` for that analytical run. Selecting a shortlist does not alter
+  the official ranking, roles or cluster exports.
 
-In the queue select **consolidator**, then open gid **100000003115284100**.
+Open the downloaded review file during the last segment to show that the boundary
+case asks for beyond-hop-4 outgoing history. Keep the exported run ID with the
+review record so the recommendation can be traced to its source run.
 
-| Card field | Actual exported value |
-|---|---:|
-| Role strength | 0.970420887893 (card: 0.970) |
-| Review priority | 0.974278834585 (card: 0.974) |
-| Cluster / depth | 14 / 1 |
-| In / out degree | 8 / 2 |
-| In / out KZT | 2,160,500 / 517,000 |
-| In / out transactions | 15 / 4 |
-| Seed reach | 9 |
-| PageRank / betweenness percentile | 97.5th / 94.5th |
-| Temporal relay | 0.600 = 3 matched / 5 complete inbound-date windows |
-| Cross-cluster degree / anomaly | 5 / 0.950 |
+## Three case cue cards
 
-Exact role evidence: `Collection pattern: 8 incoming counterparties; 2.16 million KZT received; reachable from 9 seeds.`
-Explain “eight observed payers and nine upstream seeds meet the consolidator gate;
-the weighted role strength is 0.9704, above the 0.55 threshold.” Under **Role
-evidence**, the exported winning-rule detail shows the 8 >= 2 relationship gate and
-9 >= 2 seed-reach gate. Its weighted inputs are incoming-degree percentile
-0.993772 (weight 0.30), incoming-transaction percentile 0.988879 (0.20),
-incoming-amount percentile 0.993772 (0.20), seed-reach percentile 0.998443 (0.20),
-and observed retained share 0.760704 (0.10). All weight 1.00 is available.
-That retained share is sample-derived, not a verified account balance.
+Use these values to check that the correct node is open. In the timed presentation,
+explain the pattern and the largest priority contributors; open the full weighted
+formula only if the jury asks how the score was calculated.
 
-The three largest priority contributions are role strength **0.242605222**,
-seed reach **0.199688612**, and betweenness **0.141792705**. Show the contribution
-table, then open the 1-hop network and its role legend.
-Cluster 14 contains **54 nodes**, **1 seed**, and **6,244,622 KZT** internal turnover;
-the exported hypothesis is “collection-oriented structure.”
+| Observed field | Collection candidate | Distribution candidate | Boundary collection candidate |
+|---|---:|---:|---:|
+| Exact gid | 100000003115284100 | 100000000331309100 | 100000003037476100 |
+| Role | consolidator | distributor | consolidator |
+| Role strength | 0.970421 | 0.994747 | 0.852461 |
+| Review priority | 0.974279 | 0.974322 | 0.658396 |
+| Cluster / depth | 14 / 1 | 49 / 2 | 8 / 4 |
+| Incoming / outgoing counterparties | 8 / 2 | 5 / 99 | 3 / 0 |
+| Incoming / outgoing KZT | 2,160,500 / 517,000 | 984,635 / 23,001,375 | 555,000 / 0 |
+| Incoming / outgoing transactions | 15 / 4 | 8 / 126 | 3 / 0 |
+| Distinct upstream seeds within four hops | 9 | 4 | 2 |
+| Two-day relay | 3 / 5 eligible dates = 0.600 | 4 / 4 eligible dates = 1.000 | Unavailable: outgoing boundary |
 
-## 1:30–2:30 — distribution candidate
+### 1. Collection candidate
 
-Search **100000000331309100** and open its 2-hop neighborhood.
+Exact evidence: `Collection pattern: 8 incoming counterparties; 2.16 million KZT received; reachable from 9 seeds.`
 
-| Card field | Actual exported value |
-|---|---:|
-| Role / strength | distributor / 0.994747467835 (card: 0.995) |
-| Review priority | 0.974321587005 (card: 0.974) |
-| Cluster / depth | 49 / 2 |
-| In / out degree | 5 / 99 |
-| In / out KZT | 984,635 / 23,001,375 |
-| In / out transactions | 8 / 126 |
-| Seed reach | 4 |
-| PageRank / betweenness percentile | 93.9th / 99.8th |
-| Temporal relay | 1.000 = 4 matched / 4 complete inbound-date windows |
-| Cross-cluster degree / anomaly | 29 / 0.944 |
+The structural gate requires at least two incoming counterparties and either at
+least two upstream seeds or incoming-degree percentile at least 0.80. The observed
+8 and 9 satisfy it; the highest eligible weighted role score is 0.970421, above
+0.55. The card exposes every component, weight and competing candidate.
+
+The three largest priority contributions are role strength **+0.242605**, seed
+reach **+0.199689**, and path centrality **+0.141793**. The observed retained share
+is 0.760704; it describes the sample, not a verified balance. Cluster 14's exact
+internal turnover is **6,244,622 KZT**; its hypothesis is “collection-oriented
+structure.” Request a longer history and timestamped adjacent flows to assess
+whether the collection pattern persists.
+
+### 2. Distribution candidate
 
 Exact evidence: `Distribution pattern: 99 outgoing counterparties; 126 transfers; 23 million KZT sent; 25 links cross communities.`
-Show 99 recipients and 126 observed outgoing transfers; 25 outgoing relationships
-cross the assigned cluster boundary. Toggle cluster colors/highlighting.
-The winning rule requires outgoing degree >= 2 and score >= 0.55. Its exported
-inputs are outgoing-degree percentile 0.999110 (weight 0.40), outgoing-transaction
-percentile 0.999555 (0.20), outgoing-amount percentile 1 (0.20), outgoing relationship
-share 0.951923 (0.10), and outgoing cross-community percentile 1 (0.10).
-The three largest priority contributions are role strength **0.248686867**,
-seed reach **0.184919929**, and betweenness **0.149666370**.
 
-Outflow greatly exceeds observed inflow; missing balances and external activity
-prevent a source-of-funds conclusion. Relay=1 describes date overlap, not proof
-that received money was forwarded in a particular order. Request opening balance,
-a longer period and timestamped adjacent transfers.
+The distribution gate requires at least two outgoing counterparties; 99 qualifies,
+and weighted strength 0.994747 clears 0.55. Of its observed outgoing relationships,
+25 cross community boundaries. The largest priority contributions are role strength
+**+0.248687**, seed reach **+0.184920**, and path centrality **+0.149666**.
 
-## 2:30–3:30 — boundary case
+Outgoing KZT exceeds observed incoming KZT. Request opening balance, a longer
+period and timestamped adjacent transfers before interpreting the source of funds.
+Relay 1 means outgoing activity overlapped four eligible incoming-date windows;
+it does not establish intraday order or forwarding of the same money.
 
-Search **100000003037476100**.
+### 3. Boundary collection candidate
 
-| Card field | Actual exported value |
-|---|---:|
-| Role / strength | consolidator / 0.852461447212 (card: 0.852) |
-| Review priority | 0.658396246960 (card: 0.658) |
-| Cluster / depth | 8 / 4 |
-| In / out degree | 3 / 0 |
-| In / out KZT | 555,000 / 0 |
-| In / out transactions | 3 / 0 |
-| Seed reach | 2 |
-| PageRank / betweenness percentile | 64.5th / 37.0th |
-| Cross-cluster degree / anomaly | 1 / 0.439 |
+Exact evidence: `Collection pattern: 3 incoming counterparties; 555 thousand KZT received; reachable from 2 seeds. Beyond hop 4: activity unobserved.`
 
-Read the card warning: “Outgoing transfers beyond hop 4 are not present in the
-supplied sample. Do not interpret out_deg=0 as confirmed retention.”
+Three incoming counterparties and two upstream seeds satisfy the collection gate.
+Retained share is unavailable, so the score uses available weight **0.90**; the
+missing 0.10 retention component is excluded. Relay is unavailable with reason
+`boundary_outbound_incomplete`, even though one inbound date has a complete calendar
+window and another is month-end censored. Its temporal priority contribution is
+zero because the signal is unavailable, not because non-relay was observed.
 
-Three observed payers and two upstream seeds satisfy the consolidator gate.
-Exact role evidence: `Collection pattern: 3 incoming counterparties; 555 thousand KZT received; reachable from 2 seeds. Beyond hop 4: activity unobserved.`
-The rule detail shows incoming-degree percentile 0.935943 (weight 0.30),
-incoming-transaction percentile 0.850979 (0.20), incoming-amount percentile
-0.939502 (0.20), and seed-reach percentile 0.641681 (0.20).
-Retained share is **unavailable**, so the weighted sum is divided by available
-weight **0.90**, not 1.00. Relay is also **unavailable**, with reason
-`boundary_outbound_incomplete`; there is one calendar-eligible inbound date
-and one month-end-censored date, but outgoing sampling is still incomplete.
-The priority temporal term contributes exactly **0**, not evidence of non-relay.
-Largest priority contributions are role strength **0.213115362**, seed reach
-**0.128336299**, and turnover **0.087655694**.
-Request outgoing payments beyond hop 4 and the following observation window.
+The largest priority contributions are role strength **+0.213115**, seed reach
+**+0.128336**, and observed turnover **+0.087656**. Request outgoing transfers
+beyond hop 4 and at least two days beyond the observed period.
 
-## 3:30–4:20 — structure and isolated clients
+## Jury challenge: any three supplied gids within one minute
 
-Open Resilience:
+Use **Node card**, without running the model or recomputing the graph. Allow roughly
+20 seconds per gid:
 
-| Removal | Largest weak component | Components | Fraction of baseline largest |
-|---|---:|---:|---:|
-| Baseline | 1,877 | 35 | 1.000000 |
-| Top 1 | 1,782 | 93 | 0.949387 |
-| Top 5 | 1,695 | 149 | 0.903037 |
-| Top 10 | 1,604 | 205 | 0.854555 |
-| Top 20 | 1,342 | 353 | 0.714971 |
+1. **Decision:** read role and strength, then the winning structural gate under
+   **Role evidence**. For peripheral nodes, say whether no gate passed or the
+   strongest eligible structure fell below 0.55.
+2. **Evidence:** state the two most useful actual counts/amounts and the gate
+   threshold they satisfy. **Evaluated role candidates** explains why another
+   plausible role did not win; the highest eligible score wins with documented ties.
+3. **Priority:** name the leading contribution in the exported explanation.
+4. **Limit/action:** identify a seed, hop-4 or date-window limitation if present,
+   then say what the analyst should request next. Open the graph if asked for links.
 
-Call this structural concentration analysis. It does not simulate operational
-intervention or prove a criminal network would collapse.
+Do not infer a label from the gid or use the prepared examples as a substitute for
+this challenge. Exact large gids are identifiers, not numbers to round. The linked
+[decision rules](documentation/decision-rules.md) and
+[feature contract](documentation/feature-contract.md) are the formula reference.
 
-Optional quick navigation check: **100000000456947100** is a known isolated seed,
-depth 0, in/out degrees 0/0, in/out KZT 0/0, cluster 30, role strength **0**.
-Its graph shows a single seed node. Priority is **0.164754048145**, not zero:
-average-rank percentiles on tied zero measurements and seed reach including
-self can contribute to the heuristic; they do not establish suspicious activity.
-Search **-99** to contrast the explicit unknown-gid state.
+## Short backup demonstrations
 
-## 4:20–5:00 — explanation challenge and close
+- **Isolated known node:** `100000000456947100` is a seed at depth 0, with zero
+  observed in/out relationships and KZT, cluster 30, peripheral strength 0.
+  Its graph contains one node. Priority **0.164754** includes relative tied ranks
+  and the seed's reachability from itself; it does not establish suspicious activity.
+  Request completeness confirmation and longer history. Search `-99` to show the
+  distinct unknown-gid state. All 19 supplied isolates remain represented.
+- **Temporal/originality evidence:** open the existing node-card daily activity,
+  peer-anomaly and bounded route/amount evidence. State observed dates and support
+  counts from the selected record; do not imply exact fund tracing, exhaustive
+  route enumeration or visibility of transfers below 5,000 KZT.
+- **Optional AI:** without a key, show the local workflow and disabled AI state.
+  With configured access, ask for a candidate's seed reach and show the validated
+  tool citation and **Open gid** navigation. A live API response is not guaranteed
+  by mocked/local tests; never make it a dependency of the five-minute demo.
 
-Ask a teammate to choose three gids from the supplied node file. For each:
+## Evidence and acceptance record
 
-1. Search the exact gid in Node card.
-2. Read the winning rule/gate, role strength, degrees/KZT and seed reach.
-3. Explain the largest priority contributions and any seed/hop/date limitation.
-4. State the next data request.
+The committed package has **2,248 node rows, 91 clusters and 50 ranked candidates**.
+All six role labels occur. All 19 isolated seeds have peripheral strength zero;
+no hop-4 node is assigned terminal. The top-list `why` explains priority separately
+from the role's short `evidence`. For the collection candidate it is:
 
-The automated Chromium rehearsal searches a connected node, a boundary node and
-an isolated seed, checks their evidence cards and enforces a combined **<60s**
-search limit. It also visits all seven pages, opens graph canvases with external
-network access disabled, navigates queue→card and cluster→network, regenerates
-outputs and reloads the app. This verifies interaction, not a human narrator's
-ability to deliver the five-minute explanation; rehearse the spoken timing above.
+> Review priority 0.974: consolidator rule strength 0.97 (+0.243); reachable from 9 seeds (+0.200); path centrality at percentile 94.5 (+0.142).
 
-Without a key, show the fully working core and the optional AI disabled state.
-With approved configuration, ask the assistant for the first candidate's seed
-reach: it selects cited exported fields, local validation rejects unsupported
-claims, and an **Open gid** button opens only a known node. Live API behavior
-has not been verified in this delivery.
-
-The top CSV's `why` is the independently generated priority explanation, not
-role evidence. For the first candidate it reads: `Review priority 0.974:
-consolidator rule strength 0.97 (+0.243); reachable from 9 seeds (+0.200);
-path centrality at percentile 94.5 (+0.142).` The card exposes both explanations
-and all eight numeric contributions. See `submission/RELEASE.md` for the exact
-final source revision, runtime and automated rehearsal results.
+The automated browser rehearsal exercises connected, boundary and isolated gids,
+role evidence, graph canvases, page navigation and regeneration/reload with external
+networking disabled. Its one-minute check measures interaction, not human reasoning
+or spoken delivery. See [the release record](submission/RELEASE.md) and the latest
+verification report for measured commands, environment and remaining limits.

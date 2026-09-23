@@ -8,12 +8,9 @@ then open evidence, neighborhoods and clusters in Streamlit.
 
 Run these commands from the repository root containing `main.py`.
 
-```bash
-python -m venv .venv
-```
-
-Activate on Windows PowerShell: `.\.venv\Scripts\Activate.ps1`.
-On POSIX: `source .venv/bin/activate`.
+On macOS/Linux, create the environment with `python3.11 -m venv .venv`, then
+activate it with `source .venv/bin/activate`. On Windows PowerShell, use
+`py -3.11 -m venv .venv`, then `.\.venv\Scripts\Activate.ps1`.
 
 ```bash
 python -m pip install -r requirements.txt
@@ -59,7 +56,8 @@ python main.py --data data --out out --submission submission
 
 The test service has **no external network**. Its Chromium browser rehearsal
 visits all seven pages, loads the graph canvas, exercises navigation and reload,
-and fails on attempted external asset requests. Unit/AppTest tests cover exact
+uploads and calculates a private case, downloads an analyst shortlist and the
+submission bundle, and fails on attempted external asset requests. Unit/AppTest tests cover exact
 identifiers, isolated/boundary/unknown gids, the histogram regression, filters,
 strict artifacts and source/output provenance. Local unit tests use
 `pip install -r requirements-dev.txt` then `python -m pytest -q`; install
@@ -74,11 +72,42 @@ required; implementation source hashes are recorded independently.
 
 See [DEMO.md](DEMO.md) for exact examples and the release verification record
 under `submission/` for tested commands, runtime and integration limitations.
-The latest [integrated verification report](documentation/integration-verification.md)
-records the combined branches, 461 passing tests and remaining presentation/LLM
-verification limits.
+The [integration verification report](documentation/integration-verification.md)
+records the merged baseline. The latest [final acceptance record](documentation/final-acceptance.md)
+covers the completed analyst workflow, **510 passing tests** and presentation/LLM limits.
 
 ## Investigation workflow
+
+**Upload → calculate → inspect → select → download** is available in the viewer:
+
+1. Expand **Upload case dataset** in the sidebar. Supply the three Parquet files
+   and click **Validate and run uploaded case**. The same production pipeline
+   validates inputs and creates a complete run before the viewer switches cases.
+2. Open **Investigation queue**, filter candidates and inspect a **Node card**
+   and its directed neighborhood. Use the displayed winning rule and priority
+   contributions to explain the decision.
+3. Choose exact gids in **Review shortlist**, then **Download review shortlist**.
+   It includes existing decisions, priority reasons, observation limits,
+   suggested data requests and the source run ID. No request is sent automatically.
+4. **Download submission bundle** provides the three required CSVs plus
+   `release_metadata.json`. The shortlist never changes these official outputs.
+
+Uploads use a private local temporary workspace, including inside Docker; they
+do not overwrite the configured `data/` or `out/`. Failed uploads preserve the
+previous case. **Use configured dataset** returns to the original source and
+exports and deletes the uploaded case files. Download needed files before reset
+or server shutdown. Browser disconnect alone does not guarantee immediate file
+cleanup. Selections and cached AI answers reset when the active run changes.
+
+This release's production pipeline targets the supplied **2,248-node** case.
+Uploads must stay within **July 2026** and contain amounts of **at least 5,000 KZT**
+so the viewer's observation-limit descriptions remain applicable.
+The uploader accepts up to **16 MiB per file**, **128 MiB expanded Parquet data**,
+50,000 edge rows and 100,000 transaction rows. These are upload resource limits,
+not performance guarantees for larger cases; reusable validation/features still
+support small fixtures. The measured performance claim uses the supplied dataset.
+Import `gid` as **text** when opening downloaded CSVs in spreadsheet software,
+which otherwise may round large identifiers.
 
 Start at **Overview** to confirm the observed population and sampling limits.
 The **Investigation queue** covers every supplied gid and filters role, cluster,
@@ -161,6 +190,7 @@ Auxiliary artifacts:
 | `node_features.parquet` | one exact, unique `gid` per node; rich graph/temporal metrics, availability flags, exported priority contributions and explanations |
 | `resilience.csv` | `scenario,removed_top_n,n_weak_components,largest_weak_component_size,fraction_baseline_largest,seeds_in_largest_component` |
 | `run_metadata.json` | completed-run provenance; input/output SHA-256 maps and version/environment information |
+| downloaded `money-graph-review-shortlist.csv` | `gid,role,role_score,cluster_id,priority_score,evidence,why,limitations,next_request,run_id`; one row per analyst-selected gid, ordered by exported priority then gid |
 
 The viewer joins features **one-to-one** by gid; the six CSV fields remain
 authoritative even if feature files carry duplicate decision columns.

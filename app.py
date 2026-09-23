@@ -22,6 +22,8 @@ from typing import Iterable
 import pandas as pd
 import streamlit as st
 
+from src.graph_features import percentile_rank
+
 
 APP_DIR = Path(__file__).resolve().parent
 ROLE_COLORS = {
@@ -241,6 +243,125 @@ def _load_data(output_location: str, source_location: str, fingerprints: tuple) 
 load_data.clear = _load_data.clear
 
 
+def run_context(data: InvestigationData) -> str:
+    """Identify the exact loaded case, including regeneration at the same paths."""
+    return hashlib.sha256(json.dumps({
+        "source": str(data.data_dir), "output": str(data.output_dir),
+        "run_id": data.metadata.get("run_id"), "inputs": data.metadata.get("inputs"),
+        "outputs": data.metadata.get("outputs"),
+    }, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def synchronize_run_context(data: InvestigationData) -> None:
+    """Discard selections and answers from a previous analytical run."""
+    context = run_context(data)
+    previous = st.session_state.get("active_run_context")
+    if previous is not None and previous != context:
+        for key in (
+            "selected_gid", "node_gid_input", "network_gid_input", "network_view",
+            "network_cluster_selection", "cluster_selection", "queue_selection",
+            "queue_roles", "queue_clusters", "queue_depths", "queue_seed_status",
+            "queue_minimum_priority", "review_shortlist_selection", "grounded_answer",
+            "ai_question", "pending_navigation",
+        ):
+            st.session_state.pop(key, None)
+        st.session_state["review_shortlist"] = []
+    st.session_state["active_run_context"] = context
+
+
+def activate_uploaded_case(files: dict[str, bytes]) -> None:
+    """Publish a private case to this session only after computation and loading succeed."""
+    from src.workspace import run_uploaded_case
+
+    candidate = run_uploaded_case(files)
+    try:
+        # Keep the existing case intact if its replacement cannot be displayed.
+        merged_nodes(load_data(str(candidate.out_dir), str(candidate.data_dir)))
+    except Exception:
+        candidate.cleanup()
+        raise
+    previous = st.session_state.get("uploaded_case")
+    st.session_state["uploaded_case"] = candidate
+    if previous is not None:
+        previous.cleanup()
+
+
+def case_dataset_controls(output_location: str, source_location: str) -> tuple[str, str]:
+    """Upload one complete case without writing into the configured source/output paths."""
+    with st.sidebar.expander("Upload case dataset"):
+        st.caption("Upload all three Parquet files. This release requires exactly 2,248 nodes. Validation and analysis run locally in a private temporary workspace.")
+        uploads = {
+            "nodes.parquet": st.file_uploader("Nodes Parquet", type=["parquet"], key="case_upload_nodes"),
+            "edges.parquet": st.file_uploader("Edges Parquet", type=["parquet"], key="case_upload_edges"),
+            "transactions.parquet": st.file_uploader("Transactions Parquet", type=["parquet"], key="case_upload_transactions"),
+        }
+        if st.button("Validate and run uploaded case", disabled=not all(item is not None for item in uploads.values())):
+            try:
+                with st.spinner("Validating inputs and building the uploaded case…"):
+                    activate_uploaded_case({name: item.getvalue() for name, item in uploads.items()})
+                st.success("Uploaded case is ready. The workspace now shows its verified results.")
+            except Exception as exc:
+                st.error(f"Could not import uploaded case: {exc}")
+                st.caption("The previously active case remains selected.")
+        active = st.session_state.get("uploaded_case")
+        if active is not None:
+            st.caption("Active case: uploaded files. Switching back removes this session's temporary case files.")
+            if st.button("Use configured dataset"):
+                st.session_state.pop("uploaded_case", None)
+                active.cleanup()
+                active = None
+        if active is not None:
+            return str(active.out_dir), str(active.data_dir)
+    return output_location, source_location
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def submission_bundle(output_location: str, source_location: str, expected_metadata: dict) -> bytes:
+    """Cache a bundle only for the displayed snapshot, rejecting a newer disk run."""
+    from src.workspace import build_submission_zip
+
+    return build_submission_zip(Path(output_location), Path(source_location),
+                                expected_metadata=expected_metadata)
+
+
+def render_submission_download(data: InvestigationData) -> None:
+    """Offer the strict submission files belonging to the currently displayed case."""
+    if not data.metadata:
+        return
+    try:
+        archive = submission_bundle(str(data.output_dir), str(data.data_dir), data.metadata)
+    except (OSError, ValueError) as exc:
+        st.sidebar.warning(f"Submission download unavailable: {exc}")
+        return
+    st.sidebar.download_button("Download submission bundle", data=archive,
+                               file_name="money-graph-submission.zip", mime="application/zip")
+
+
+def persist_review_shortlist() -> None:
+    """Keep the analyst's selection when Streamlit removes an off-page widget."""
+    st.session_state["review_shortlist"] = list(st.session_state.get("review_shortlist_selection", []))
+
+
+def render_review_shortlist(data: InvestigationData, nodes: pd.DataFrame, queue: pd.DataFrame) -> None:
+    """Download selected existing decisions; selection never changes their ranking."""
+    from src.workspace import build_review_csv
+
+    options = queue["gid"].astype(str).tolist()
+    known = set(options)
+    selected = [gid for gid in st.session_state.get("review_shortlist", []) if gid in known]
+    st.session_state["review_shortlist"] = selected
+    if "review_shortlist_selection" not in st.session_state:
+        st.session_state["review_shortlist_selection"] = selected
+    st.subheader("Prepare further review")
+    selection = st.multiselect("Review shortlist", options, key="review_shortlist_selection",
+                               on_change=persist_review_shortlist,
+                               help="Select exact gids from the complete investigation queue. Table filters do not discard your shortlist.")
+    st.caption("This analyst-selected list includes exported decisions, ranking reasons, observation limits and next data requests. It is separate from the required submission CSVs.")
+    payload = build_review_csv(nodes, selection, data.metadata) if selection else b""
+    st.download_button("Download review shortlist", data=payload, file_name="money-graph-review-shortlist.csv",
+                       mime="text/csv", disabled=not selection)
+
+
 def merged_nodes(data: InvestigationData) -> pd.DataFrame:
     """Keep the six submission fields authoritative; join exact gid-keyed metrics."""
     roles = data.roles.copy()
@@ -291,8 +412,11 @@ def merged_nodes(data: InvestigationData) -> pd.DataFrame:
         if additions:
             roles = roles.merge(direct[["gid", *additions]], on="gid", how="left")
             roles[additions] = roles[additions].fillna(0)
-    if first_column(roles, "turnover_kzt", "turnover", "in_out_kzt") is None and {"in_kzt", "out_kzt"}.issubset(roles.columns):
-        roles["turnover_kzt"] = pd.to_numeric(roles["in_kzt"], errors="coerce").fillna(0) + pd.to_numeric(roles["out_kzt"], errors="coerce").fillna(0)
+    if first_column(roles, "turnover_kzt", "turnover", "in_out_kzt") is None:
+        if "total_kzt" in roles:
+            roles["turnover_kzt"] = pd.to_numeric(roles["total_kzt"], errors="coerce")
+        elif {"in_kzt", "out_kzt"}.issubset(roles.columns):
+            roles["turnover_kzt"] = pd.to_numeric(roles["in_kzt"], errors="coerce").fillna(0) + pd.to_numeric(roles["out_kzt"], errors="coerce").fillna(0)
     if "truncated_by_depth" not in roles and {"depth", "out_deg"}.issubset(roles.columns):
         roles["truncated_by_depth"] = (pd.to_numeric(roles["depth"], errors="coerce") == 4) & (roles["out_deg"] == 0)
     return roles
@@ -344,7 +468,7 @@ def queue_view(table: pd.DataFrame) -> pd.DataFrame:
         "priority_score": column_or_default(table, ["priority_score", "priority"]),
         "cluster": column_or_default(table, ["cluster_id", "cluster"]),
         "seed_reach": column_or_default(table, ["seed_reach", "n_seed_reach", "seed_reach_count"]),
-        "turnover_kzt": column_or_default(table, ["turnover_kzt", "turnover", "in_out_kzt", "in_kzt"]),
+        "turnover_kzt": column_or_default(table, ["turnover_kzt", "turnover", "in_out_kzt", "total_kzt", "in_kzt"]),
         "why": reasons,
         "depth": column_or_default(table, ["depth"]),
         "is_seed": column_or_default(table, ["is_seed", "seed"]),
@@ -413,13 +537,13 @@ def queue_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     queue = queue_view(table)
     a, b, c, d, e = st.columns(5)
     roles = sorted(x for x in queue["role"].dropna().astype(str).unique() if x != MISSING)
-    selected_roles = a.multiselect("Role", roles)
+    selected_roles = a.multiselect("Role", roles, key="queue_roles")
     clusters = sorted(queue["cluster"].dropna().astype(str).unique())
-    selected_clusters = b.multiselect("Cluster", clusters)
+    selected_clusters = b.multiselect("Cluster", clusters, key="queue_clusters")
     depths = sorted(pd.to_numeric(queue["depth"], errors="coerce").dropna().astype(int).unique().tolist())
-    selected_depths = c.multiselect("Depth", depths)
-    seed_filter = d.selectbox("Seed status", ["All", "Seed", "Non-seed"])
-    minimum = e.number_input("Minimum priority", min_value=0.0, max_value=1.0, value=0.0)
+    selected_depths = c.multiselect("Depth", depths, key="queue_depths")
+    seed_filter = d.selectbox("Seed status", ["All", "Seed", "Non-seed"], key="queue_seed_status")
+    minimum = e.number_input("Minimum priority", min_value=0.0, max_value=1.0, value=0.0, key="queue_minimum_priority")
     filtered = queue[queue["priority_score"] >= minimum]
     if selected_roles:
         filtered = filtered[filtered["role"].astype(str).isin(selected_roles)]
@@ -435,6 +559,7 @@ def queue_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     display["turnover_kzt"] = display["turnover_kzt"].map(lambda x: fmt_kzt(x) if x != MISSING else MISSING)
     st.dataframe(display_frame(display[["rank", "gid", "role", "priority_score", "cluster", "seed_reach", "turnover_kzt", "why"]]),
                  width="stretch", hide_index=True, height=440)
+    render_review_shortlist(data, nodes, queue)
     if filtered.empty:
         return
     option_map = {f"#{row.rank} · gid {row.gid} · {row.role}": int(row.gid) for row in filtered.itertuples()}
@@ -447,13 +572,11 @@ def queue_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
 def percentile(frame: pd.DataFrame, col: str, gid: int) -> str:
     if col not in frame:
         return MISSING
-    values = pd.to_numeric(frame[col], errors="coerce")
-    if values.notna().sum() < 2:
-        return MISSING
     row_index = frame.index[frame["gid"] == gid]
     if row_index.empty:
         return MISSING
-    return f"{values.rank(pct=True).loc[row_index[0]] * 100:.1f}th percentile"
+    ranked = percentile_rank(frame[col]).loc[row_index[0]]
+    return MISSING if pd.isna(ranked) else f"{ranked * 100:.1f}th percentile"
 
 
 def observed_ratio(row: pd.Series, metric: str, flag: str, reason: str | None = None) -> str:
@@ -618,17 +741,8 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
             st.dataframe(breakdown, hide_index=True, width="stretch")
             st.caption("Exported contributions sum to the priority score. Unavailable terms contribute zero with fixed weights; they are not measured zeros.")
     st.subheader("Suggested next data request")
-    requests = []
-    if depth == 4:
-        requests.append("Extend outgoing transaction history for this gid beyond hop 4, including counterparties and dates.")
-    if is_seed:
-        requests.append("Retrieve incoming transfers and opening balance context for this seed; seed inflows are incomplete in this sample.")
-    if value(row, "in_deg") == 0 and value(row, "out_deg") == 0:
-        requests.append("Confirm extract completeness for this isolated gid and request a longer history before interpreting absent activity.")
-    if as_number(value(row, "relay_2d_censored_days")) > 0:
-        requests.append("Extend transaction history at least two days past the observation end to assess the omitted partial-follow-up incoming dates.")
-    if not requests:
-        requests.append("Retrieve a longer observation window and KYC / counterparty context for the highest-value adjacent flows.")
+    from src.workspace import observation_guidance
+    _, requests = observation_guidance(row)
     for request in requests:
         st.markdown(f"- {request}")
     st.caption("The sample only covers intrabank transfers of at least 5,000 KZT during July 2026. Request other banks, smaller transfers and a longer period to assess missing context.")
@@ -899,7 +1013,7 @@ def cluster_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     if not choices:
         st.info("No clusters are available in the loaded data.")
         return
-    selected = st.selectbox("Cluster", choices)
+    selected = st.selectbox("Cluster", choices, key="cluster_selection")
     members = nodes[nodes[cluster_col].astype(str) == selected]
     summary = data.clusters[data.clusters["cluster_id"].astype(str) == selected] if "cluster_id" in data.clusters else pd.DataFrame()
     internal = data.edges[data.edges["src"].isin(members["gid"]) & data.edges["dst"].isin(members["gid"])] if not data.edges.empty else pd.DataFrame()
@@ -958,10 +1072,8 @@ def ai_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     if not os.getenv("OPENAI_API_KEY"):
         st.info("Core investigation features work without an API key. Set `OPENAI_API_KEY` to enable this optional panel.")
         return
-    question = st.text_area("Ask about exported evidence", placeholder="Compare gid 101 and gid 202, then explain what to review next.")
-    context = hashlib.sha256(json.dumps({
-        "run_id": data.metadata.get("run_id"), "inputs": data.metadata.get("inputs"), "outputs": data.metadata.get("outputs"),
-    }, sort_keys=True).encode("utf-8")).hexdigest()
+    question = st.text_area("Ask about exported evidence", placeholder="Compare gid 101 and gid 202, then explain what to review next.", key="ai_question")
+    context = run_context(data)
     if st.button("Ask grounded assistant", type="primary", disabled=not question.strip()):
         st.session_state.pop("grounded_answer", None)
         try:
@@ -992,6 +1104,7 @@ def main() -> None:
     st.sidebar.title("Money Graph")
     output_location = st.sidebar.text_input("Exports directory", os.getenv("MONEY_GRAPH_OUTPUT_DIR", "out"))
     source_location = st.sidebar.text_input("Source data directory", os.getenv("MONEY_GRAPH_DATA_DIR", "data"))
+    output_location, source_location = case_dataset_controls(output_location, source_location)
     if st.sidebar.button("Reload data"):
         load_data.clear()
     pages = ["Overview", "Investigation queue", "Node card", "Network explorer", "Cluster review", "Resilience", "AI analyst"]
@@ -1012,6 +1125,7 @@ def main() -> None:
     except Exception as exc:
         st.error(f"Could not load the supplied files: {exc}")
         st.stop()
+    synchronize_run_context(data)
     if data.metadata:
         st.sidebar.caption(f"Verified run: {data.metadata['run_id']}")
         st.sidebar.caption(
@@ -1020,6 +1134,7 @@ def main() -> None:
         )
         with st.sidebar.expander("Run provenance"):
             st.json(data.metadata)
+    render_submission_download(data)
     if page == "Overview":
         overview_page(data, nodes)
     elif page == "Investigation queue":
