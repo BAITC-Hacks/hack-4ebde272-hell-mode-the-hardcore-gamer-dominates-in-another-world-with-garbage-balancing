@@ -1,0 +1,3 @@
+-c constraints.txt
+# Optional: install only to enable the external LLM panel.
+openai==3.19.0

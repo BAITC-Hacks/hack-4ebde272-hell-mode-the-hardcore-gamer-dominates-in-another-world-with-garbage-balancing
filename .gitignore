@@ -1,0 +1,107 @@
+# Keep source, supplied data/*.parquet, dependency manifests, Docker configuration,
+# documentation, and the final submission/ CSVs eligible for version control.
+# Ignore disposable runtime exports below; do not ignore all CSV/Parquet files.
+
+# Python environments and interpreter files
+.venv/
+.venv-*/
+venv/
+env/
+ENV/
+.Python
+__pypackages__/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python packaging and build output
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Test, type-checker, linter, and notebook caches
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+.benchmarks/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+coverage.json
+junit.xml
+
+# Credentials and local environment settings (keep sanitized examples)
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.*.example
+.envrc
+.direnv/
+.streamlit/secrets.toml
+.secrets/
+secrets/
+credentials.local.*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Generated analytics output and local runtime state
+/out/
+/exports/
+/logs/
+/tmp/
+/temp/
+/docker-data/
+/volumes/
+*.log
+*.log.*
+*.pid
+*.pid.lock
+
+# Personal Docker Compose overrides; shared compose.yaml stays tracked
+/compose.override.yml
+/compose.override.yaml
+/docker-compose.override.yml
+/docker-compose.override.yaml
+
+# Editor settings, recovery files, and temporary files
+.idea/
+.vscode/
+.fleet/
+.history/
+*.code-workspace
+*.swp
+*.swo
+*~
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+
+# macOS and Windows metadata
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100/
+.Trashes/
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

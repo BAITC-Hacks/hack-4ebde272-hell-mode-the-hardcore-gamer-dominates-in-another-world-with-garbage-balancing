@@ -1,0 +1,50 @@
+services:
+  analytics:
+    build:
+      context: .
+      target: runtime
+      args:
+        INSTALL_AI: "true"
+    image: money-graph:local
+    command: ["python", "pipeline.py", "--data", "/app/data", "--out", "/app/out"]
+    volumes:
+      - ./data:/app/data:ro
+      - ./out:/app/out
+    environment:
+      MONEY_GRAPH_GIT_REVISION: ${MONEY_GRAPH_GIT_REVISION:-unknown}
+    restart: "no"
+
+  app:
+    image: money-graph:local
+    command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true", "--browser.serverAddress=localhost"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+    depends_on:
+      analytics:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - ./data:/app/data:ro
+      - ./out:/app/out:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      target: test
+      args:
+        INSTALL_AI: "true"
+    image: money-graph:test
+    volumes:
+      - ./data:/app/data:ro
+    network_mode: none
