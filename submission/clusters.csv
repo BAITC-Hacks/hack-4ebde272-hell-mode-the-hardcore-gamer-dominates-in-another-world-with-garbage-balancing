@@ -1,92 +1,92 @@
 cluster_id,n_nodes,n_seed,sum_kzt_internal,top_gids,hypothesis
-0,26,14,2289450.0,"100000004403675100,100000005382566100,100000008254069100,100000004041163100,100000005386383100",multi-seed convergence community
-1,127,7,18414962.28,"100000003016635100,100000001530983100,100000006518161100,100000005287097100,100000007777377100",multi-seed convergence community
-2,52,5,4171441.0,"100000008346837100,100000005074393100,100000008733194100,100000001236706100,100000006424479100",multi-seed convergence community
-3,146,3,19519090.0,"100000008165763100,100000003684369100,100000007908818100,100000008304139100,100000005612411100",multi-seed convergence community
-4,61,3,8902320.0,"100000004015047100,100000001616816100,100000002870463100,100000006788200100,100000003111305100",multi-seed convergence community
-5,41,3,4888834.28,"100000004156082100,100000005339662100,100000004820260100,100000008418835100,100000000076451100",multi-seed convergence community
-6,7,3,4442461.0,"100000008637537100,100000001732159100,100000003404627100,100000008314203100,100000002681449100",multi-seed convergence community
-7,5,2,108007.0,"100000006562026100,100000007347733100,100000006249740100,100000008129393100,100000006831291100",multi-seed convergence community
-8,158,1,32434270.59,"100000008489922100,100000008547948100,100000008710791100,100000008547844100,100000002838861100",mixed-flow community
-9,277,1,31227334.24,"100000000437046100,100000002957787100,100000008477350100,100000002398779100,100000005910114100",mixed-flow community
-10,17,1,21586840.0,"100000004603109100,100000002224132100,100000005664922100,100000004892144100,100000000594783100",mixed-flow community
-11,270,1,10178044.0,"100000002578405100,100000001697501100,100000002527114100,100000002733905100,100000001166289100",mixed-flow community
-12,56,1,10014014.02,"100000005782781100,100000002921047100,100000002894076100,100000005778283100,100000003158727100",mixed-flow community
-13,30,1,6513430.0,"100000007594394100,100000006274203100,100000008546855100,100000003854444100,100000001049200100",mixed-flow community
-14,54,1,6244622.0,"100000003115284100,100000000343175100,100000008730846100,100000003809101100,100000007998965100",collection-oriented structure
-15,53,1,2993313.0,"100000003265158100,100000001899164100,100000002193259100,100000004386258100,100000004662806100",mixed-flow community
-16,17,1,2977887.0,"100000002731501100,100000004160650100,100000004007116100,100000003616818100,100000001330595100",mixed-flow community
-17,5,1,2809200.0,"100000004135268100,100000008571433100,100000002738256100,100000007507343100,100000004979498100",transit-heavy structure
-18,6,1,1615030.0,"100000008736940100,100000008193577100,100000008659445100,100000005456919100,100000008751429100",mixed-flow community
-19,6,1,1527967.0,"100000000580561100,100000007939160100,100000005183943100,100000003888271100,100000007930878100",mixed-flow community
-20,4,1,1404980.0,"100000001872484100,100000008601794100,100000000785800100,100000002459163100",mixed-flow community
-21,13,1,1392916.0,"100000001380054100,100000006232815100,100000005077484100,100000003164661100,100000004192865100",mixed-flow community
-22,3,1,450816.0,"100000005034574100,100000007283257100,100000004388983100",sparse peripheral community
-23,3,1,450000.0,"100000002371751100,100000000769919100,100000007018630100",sparse peripheral community
-24,3,1,390167.62,"100000002781227100,100000002796853100,100000008522127100",distribution-oriented structure
-25,6,1,383300.0,"100000004094958100,100000005547096100,100000005546031100,100000004331458100,100000005363908100",mixed-flow community
-26,6,1,275885.0,"100000005895525100,100000002462183100,100000005485830100,100000005056870100,100000007175718100",mixed-flow community
-27,2,1,81465.0,"100000003865939100,100000005392290100",sparse peripheral community
-28,4,1,79050.0,"100000003148220100,100000001852140100,100000006888238100,100000004971871100",mixed-flow community
-29,2,1,30000.0,"100000003980083100,100000003200071100",sparse peripheral community
-30,1,1,0.0,100000000456947100,sparse peripheral community
-31,1,1,0.0,100000003265658100,sparse peripheral community
-32,1,1,0.0,100000003349739100,sparse peripheral community
-33,1,1,0.0,100000003770083100,sparse peripheral community
-34,1,1,0.0,100000004021459100,sparse peripheral community
-35,1,1,0.0,100000004174835100,sparse peripheral community
-36,1,1,0.0,100000005017150100,sparse peripheral community
-37,1,1,0.0,100000005087431100,sparse peripheral community
-38,1,1,0.0,100000005235389100,sparse peripheral community
-39,1,1,0.0,100000005480435100,sparse peripheral community
-40,1,1,0.0,100000005495722100,sparse peripheral community
-41,1,1,0.0,100000005550592100,sparse peripheral community
-42,1,1,0.0,100000005560900100,sparse peripheral community
-43,1,1,0.0,100000005568407100,sparse peripheral community
-44,1,1,0.0,100000008117324100,sparse peripheral community
-45,1,1,0.0,100000008205000100,sparse peripheral community
-46,1,1,0.0,100000008513251100,sparse peripheral community
-47,1,1,0.0,100000008669037100,sparse peripheral community
-48,1,1,0.0,100000008701222100,sparse peripheral community
-49,126,0,24907250.33,"100000000331309100,100000006889963100,100000006734214100,100000000332284100,100000005665181100",mixed-flow community
-50,60,0,15020787.0,"100000008512827100,100000005514161100,100000005242320100,100000001282143100,100000001584286100",mixed-flow community
-51,106,0,11794744.0,"100000008603629100,100000001857829100,100000000661912100,100000002723538100,100000000413678100",mixed-flow community
-52,44,0,10215968.84,"100000001937767100,100000005933757100,100000004159526100,100000002605308100,100000002963189100",mixed-flow community
-53,25,0,7556605.0,"100000008743913100,100000008758168100,100000008710843100,100000002748532100,100000001141268100",mixed-flow community
-54,13,0,6748650.0,"100000007442518100,100000008258083100,100000000673868100,100000002911170100,100000000821507100",mixed-flow community
-55,41,0,5151924.19,"100000003242289100,100000008413748100,100000008512552100,100000006225798100,100000003178549100",mixed-flow community
-56,25,0,5089597.0,"100000005527892100,100000008343874100,100000006977207100,100000002459832100,100000002936322100",mixed-flow community
-57,61,0,4350466.67,"100000005704413100,100000005578559100,100000005473151100,100000008104567100,100000008545727100",mixed-flow community
-58,11,0,3784703.0,"100000002175422100,100000003004487100,100000003557488100,100000001317336100,100000002710570100",mixed-flow community
-59,15,0,3626010.0,"100000008461532100,100000000791285100,100000006704530100,100000003122817100,100000002691583100",mixed-flow community
-60,18,0,3422800.0,"100000003701161100,100000002267998100,100000003718221100,100000008137435100,100000001063678100",mixed-flow community
-61,7,0,3077000.0,"100000002241986100,100000001053894100,100000002594214100,100000004047887100,100000001286703100",sparse peripheral community
-62,6,0,2540000.0,"100000004479404100,100000004717647100,100000002922000100,100000002659103100,100000001533161100",mixed-flow community
-63,6,0,2534500.0,"100000003747133100,100000004722765100,100000002578653100,100000005075949100,100000006527156100",collection-oriented structure
-64,8,0,2473417.91,"100000004906181100,100000008175078100,100000008675322100,100000000557536100,100000008349740100",sparse peripheral community
-65,7,0,1765600.0,"100000007392365100,100000007865484100,100000008551752100,100000003631015100,100000004976946100",sparse peripheral community
-66,10,0,1727065.0,"100000004076740100,100000005519998100,100000004017410100,100000004336312100,100000005932987100",mixed-flow community
-67,14,0,1605604.0,"100000008213966100,100000007382543100,100000000838385100,100000003001661100,100000008655779100",mixed-flow community
-68,4,0,1595700.0,"100000001052945100,100000001131403100,100000004616845100,100000005146665100",collection-oriented structure
-69,3,0,1557988.0,"100000008258458100,100000004035925100,100000008619159100",collection-oriented structure
-70,9,0,1406982.0,"100000002217161100,100000001445848100,100000007647294100,100000000954884100,100000003006633100",mixed-flow community
-71,7,0,1268308.0,"100000008011159100,100000006169033100,100000005754335100,100000003888527100,100000006573438100",mixed-flow community
-72,5,0,1189154.0,"100000000291906100,100000004670388100,100000000291908100,100000004722630100,100000004691350100",mixed-flow community
-73,2,0,857500.0,"100000008324800100,100000007390016100",collection-oriented structure
-74,15,0,850450.0,"100000005505655100,100000001526235100,100000001788284100,100000002472632100,100000002984403100",mixed-flow community
-75,4,0,832800.0,"100000003159641100,100000008625905100,100000001065234100,100000002194320100",collection-oriented structure
-76,2,0,761255.0,"100000000583220100,100000004586598100",collection-oriented structure
-77,6,0,720900.0,"100000008761219100,100000007472293100,100000006638021100,100000008333492100,100000002794374100",collection-oriented structure
-78,3,0,627870.0,"100000008628231100,100000004666651100,100000005664632100",collection-oriented structure
-79,20,0,617900.0,"100000002448088100,100000001427082100,100000003154105100,100000000723383100,100000002185328100",sparse peripheral community
-80,10,0,603900.0,"100000003635170100,100000004209339100,100000002156381100,100000002696152100,100000005602999100",mixed-flow community
-81,2,0,584900.0,"100000008430691100,100000007330432100",sparse peripheral community
-82,3,0,553830.0,"100000003321895100,100000003692843100,100000002371892100",collection-oriented structure
-83,4,0,518000.0,"100000002205022100,100000000629812100,100000003163886100,100000001380107100",collection-oriented structure
-84,4,0,460000.0,"100000006069103100,100000000201868100,100000003192220100,100000006787636100",collection-oriented structure
-85,29,0,446070.0,"100000008460102100,100000001164648100,100000004891562100,100000002706810100,100000008715513100",sparse peripheral community
-86,8,0,389000.0,"100000005507142100,100000002612809100,100000005264874100,100000001825934100,100000000600707100",mixed-flow community
-87,4,0,332709.0,"100000002513028100,100000004610802100,100000002516862100,100000004780083100",collection-oriented structure
-88,10,0,322010.0,"100000008172352100,100000007322059100,100000004552204100,100000000993112100,100000002691858100",mixed-flow community
-89,5,0,172000.0,"100000005031696100,100000004659919100,100000001223977100,100000002700161100,100000008461217100",sparse peripheral community
-90,7,0,143000.0,"100000004508696100,100000005911352100,100000003962994100,100000005127767100,100000000507799100",mixed-flow community
+0,26,14,2289450.0,"100000004403675100,100000005382566100,100000008254069100,100000004041163100,100000005386383100","This group contains 26 accounts, including 14 initial case accounts, with 2,289,450 KZT transferred within the group. Review their shared links; group membership alone does not prove that funds converge or that one person controls the accounts."
+1,127,7,18414962.28,"100000003016635100,100000001530983100,100000006518161100,100000005287097100,100000007777377100","This group contains 127 accounts, including 7 initial case accounts, with 18,414,962.28 KZT transferred within the group. Review their shared links; group membership alone does not prove that funds converge or that one person controls the accounts."
+2,52,5,4171441.0,"100000008346837100,100000005074393100,100000008733194100,100000001236706100,100000006424479100","This group contains 52 accounts, including 5 initial case accounts, with 4,171,441 KZT transferred within the group. Review their shared links; group membership alone does not prove that funds converge or that one person controls the accounts."
+3,146,3,19519090.0,"100000008165763100,100000003684369100,100000007908818100,100000008304139100,100000005612411100","This group contains 146 accounts, including 3 initial case accounts, with 19,519,090 KZT transferred within the group. Review their shared links; group membership alone does not prove that funds converge or that one person controls the accounts."
+4,61,3,8902320.0,"100000004015047100,100000001616816100,100000002870463100,100000006788200100,100000003111305100","This group contains 61 accounts, including 3 initial case accounts, with 8,902,320 KZT transferred within the group. Review their shared links; group membership alone does not prove that funds converge or that one person controls the accounts."
+5,41,3,4888834.28,"100000004156082100,100000005339662100,100000004820260100,100000008418835100,100000000076451100","This group contains 41 accounts, including 3 initial case accounts, with 4,888,834.28 KZT transferred within the group. Review their shared links; group membership alone does not prove that funds converge or that one person controls the accounts."
+6,7,3,4442461.0,"100000008637537100,100000001732159100,100000003404627100,100000008314203100,100000002681449100","This group contains 7 accounts, including 3 initial case accounts, with 4,442,461 KZT transferred within the group. Review their shared links; group membership alone does not prove that funds converge or that one person controls the accounts."
+7,5,2,108007.0,"100000006562026100,100000007347733100,100000006249740100,100000008129393100,100000006831291100","This group contains 5 accounts, including 2 initial case accounts, with 108,007 KZT transferred within the group. Review their shared links; group membership alone does not prove that funds converge or that one person controls the accounts."
+8,158,1,32434270.59,"100000008489922100,100000008547948100,100000008710791100,100000008547844100,100000002838861100","Mixed payment group: 158 accounts transferred 32,434,270.59 KZT internally. Observed roles include 68 accounts with little observed outflow and 52 accounts without a clear role; no single financial purpose is established."
+9,277,1,31227334.24,"100000000437046100,100000002957787100,100000008477350100,100000002398779100,100000005910114100","Mixed payment group: 277 accounts transferred 31,227,334.24 KZT internally. Observed roles include 118 accounts with little observed outflow and 80 accounts without a clear role; no single financial purpose is established."
+10,17,1,21586840.0,"100000004603109100,100000002224132100,100000005664922100,100000004892144100,100000000594783100","Mixed payment group: 17 accounts transferred 21,586,840 KZT internally. Observed roles include 7 accounts with little observed outflow and 6 possible distributors; no single financial purpose is established."
+11,270,1,10178044.0,"100000002578405100,100000001697501100,100000002527114100,100000002733905100,100000001166289100","Mixed payment group: 270 accounts transferred 10,178,044 KZT internally. Observed roles include 251 accounts with little observed outflow and 12 accounts without a clear role; no single financial purpose is established."
+12,56,1,10014014.02,"100000005782781100,100000002921047100,100000002894076100,100000005778283100,100000003158727100","Mixed payment group: 56 accounts transferred 10,014,014.02 KZT internally. Observed roles include 35 accounts with little observed outflow and 9 possible distributors; no single financial purpose is established."
+13,30,1,6513430.0,"100000007594394100,100000006274203100,100000008546855100,100000003854444100,100000001049200100","Mixed payment group: 30 accounts transferred 6,513,430 KZT internally. Observed roles include 12 accounts with little observed outflow and 7 possible distributors; no single financial purpose is established."
+14,54,1,6244622.0,"100000003115284100,100000000343175100,100000008730846100,100000003809101100,100000007998965100","Possible collection group: its 54 accounts have 91 incoming and 71 outgoing payment links. Internal transfers total 6,244,622 KZT; full account balances remain unknown."
+15,53,1,2993313.0,"100000003265158100,100000001899164100,100000002193259100,100000004386258100,100000004662806100","Mixed payment group: 53 accounts transferred 2,993,313 KZT internally. Observed roles include 25 accounts with little observed outflow and 13 accounts without a clear role; no single financial purpose is established."
+16,17,1,2977887.0,"100000002731501100,100000004160650100,100000004007116100,100000003616818100,100000001330595100","Mixed payment group: 17 accounts transferred 2,977,887 KZT internally. Observed roles include 7 accounts with little observed outflow and 5 possible distributors; no single financial purpose is established."
+17,5,1,2809200.0,"100000004135268100,100000008571433100,100000002738256100,100000007507343100,100000004979498100","Possible relay group: 2 of 5 accounts have a relay role, and 2,809,200 KZT moved within the group. Date-only observations cannot establish that the same funds were passed onward."
+18,6,1,1615030.0,"100000008736940100,100000008193577100,100000008659445100,100000005456919100,100000008751429100","Mixed payment group: 6 accounts transferred 1,615,030 KZT internally. Observed roles include 3 possible distributors and 2 accounts with little observed outflow; no single financial purpose is established."
+19,6,1,1527967.0,"100000000580561100,100000007939160100,100000005183943100,100000003888271100,100000007930878100","Mixed payment group: 6 accounts transferred 1,527,967 KZT internally. Observed roles include 4 accounts with little observed outflow and 2 possible distributors; no single financial purpose is established."
+20,4,1,1404980.0,"100000001872484100,100000008601794100,100000000785800100,100000002459163100","Mixed payment group: 4 accounts transferred 1,404,980 KZT internally. Observed roles include 1 possible collector and 1 possible distributor; no single financial purpose is established."
+21,13,1,1392916.0,"100000001380054100,100000006232815100,100000005077484100,100000003164661100,100000004192865100","Mixed payment group: 13 accounts transferred 1,392,916 KZT internally. Observed roles include 6 accounts with little observed outflow and 4 accounts without a clear role; no single financial purpose is established."
+22,3,1,450816.0,"100000005034574100,100000007283257100,100000004388983100","Small group of 3 accounts with 450,816 KZT transferred internally. Review the observed links; group size alone does not establish its purpose."
+23,3,1,450000.0,"100000002371751100,100000000769919100,100000007018630100","Small group of 3 accounts with 450,000 KZT transferred internally. Review the observed links; group size alone does not establish its purpose."
+24,3,1,390167.62,"100000002781227100,100000002796853100,100000008522127100","Possible distribution group: its 3 accounts have 5 outgoing and 3 incoming payment links. Internal transfers total 390,167.62 KZT; this describes the sample, not a proven purpose."
+25,6,1,383300.0,"100000004094958100,100000005547096100,100000005546031100,100000004331458100,100000005363908100","Mixed payment group: 6 accounts transferred 383,300 KZT internally. Observed roles include 2 possible distributors and 2 possible relays; no single financial purpose is established."
+26,6,1,275885.0,"100000005895525100,100000002462183100,100000005485830100,100000005056870100,100000007175718100","Mixed payment group: 6 accounts transferred 275,885 KZT internally. Observed roles include 5 accounts with little observed outflow and 1 possible distributor; no single financial purpose is established."
+27,2,1,81465.0,"100000003865939100,100000005392290100","Small group of 2 accounts with 81,465 KZT transferred internally. Review the observed links; group size alone does not establish its purpose."
+28,4,1,79050.0,"100000003148220100,100000001852140100,100000006888238100,100000004971871100","Mixed payment group: 4 accounts transferred 79,050 KZT internally. Observed roles include 2 accounts without a clear role and 1 possible distributor; no single financial purpose is established."
+29,2,1,30000.0,"100000003980083100,100000003200071100","Small group of 2 accounts with 30,000 KZT transferred internally. Review the observed links; group size alone does not establish its purpose."
+30,1,1,0.0,100000000456947100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+31,1,1,0.0,100000003265658100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+32,1,1,0.0,100000003349739100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+33,1,1,0.0,100000003770083100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+34,1,1,0.0,100000004021459100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+35,1,1,0.0,100000004174835100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+36,1,1,0.0,100000005017150100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+37,1,1,0.0,100000005087431100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+38,1,1,0.0,100000005235389100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+39,1,1,0.0,100000005480435100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+40,1,1,0.0,100000005495722100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+41,1,1,0.0,100000005550592100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+42,1,1,0.0,100000005560900100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+43,1,1,0.0,100000005568407100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+44,1,1,0.0,100000008117324100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+45,1,1,0.0,100000008205000100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+46,1,1,0.0,100000008513251100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+47,1,1,0.0,100000008669037100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+48,1,1,0.0,100000008701222100,This group contains 1 initial case account with no observed transfers. The sample cannot establish whether it was active outside the observed period or bank.
+49,126,0,24907250.33,"100000000331309100,100000006889963100,100000006734214100,100000000332284100,100000005665181100","Mixed payment group: 126 accounts transferred 24,907,250.33 KZT internally. Observed roles include 63 accounts with little observed outflow and 40 accounts without a clear role; no single financial purpose is established."
+50,60,0,15020787.0,"100000008512827100,100000005514161100,100000005242320100,100000001282143100,100000001584286100","Mixed payment group: 60 accounts transferred 15,020,787 KZT internally. Observed roles include 33 accounts with little observed outflow and 12 possible distributors; no single financial purpose is established."
+51,106,0,11794744.0,"100000008603629100,100000001857829100,100000000661912100,100000002723538100,100000000413678100","Mixed payment group: 106 accounts transferred 11,794,744 KZT internally. Observed roles include 45 accounts without a clear role and 30 accounts with little observed outflow; no single financial purpose is established."
+52,44,0,10215968.84,"100000001937767100,100000005933757100,100000004159526100,100000002605308100,100000002963189100","Mixed payment group: 44 accounts transferred 10,215,968.84 KZT internally. Observed roles include 27 accounts with little observed outflow and 10 accounts without a clear role; no single financial purpose is established."
+53,25,0,7556605.0,"100000008743913100,100000008758168100,100000008710843100,100000002748532100,100000001141268100","Mixed payment group: 25 accounts transferred 7,556,605 KZT internally. Observed roles include 13 accounts with little observed outflow and 5 accounts without a clear role; no single financial purpose is established."
+54,13,0,6748650.0,"100000007442518100,100000008258083100,100000000673868100,100000002911170100,100000000821507100","Mixed payment group: 13 accounts transferred 6,748,650 KZT internally. Observed roles include 8 accounts with little observed outflow and 2 accounts without a clear role; no single financial purpose is established."
+55,41,0,5151924.19,"100000003242289100,100000008413748100,100000008512552100,100000006225798100,100000003178549100","Mixed payment group: 41 accounts transferred 5,151,924.19 KZT internally. Observed roles include 18 accounts with little observed outflow and 12 accounts without a clear role; no single financial purpose is established."
+56,25,0,5089597.0,"100000005527892100,100000008343874100,100000006977207100,100000002459832100,100000002936322100","Mixed payment group: 25 accounts transferred 5,089,597 KZT internally. Observed roles include 12 accounts with little observed outflow and 8 accounts without a clear role; no single financial purpose is established."
+57,61,0,4350466.67,"100000005704413100,100000005578559100,100000005473151100,100000008104567100,100000008545727100","Mixed payment group: 61 accounts transferred 4,350,466.67 KZT internally. Observed roles include 32 accounts without a clear role and 22 accounts with little observed outflow; no single financial purpose is established."
+58,11,0,3784703.0,"100000002175422100,100000003004487100,100000003557488100,100000001317336100,100000002710570100","Mixed payment group: 11 accounts transferred 3,784,703 KZT internally. Observed roles include 4 accounts with little observed outflow and 3 possible distributors; no single financial purpose is established."
+59,15,0,3626010.0,"100000008461532100,100000000791285100,100000006704530100,100000003122817100,100000002691583100","Mixed payment group: 15 accounts transferred 3,626,010 KZT internally. Observed roles include 7 accounts without a clear role and 5 accounts with little observed outflow; no single financial purpose is established."
+60,18,0,3422800.0,"100000003701161100,100000002267998100,100000003718221100,100000008137435100,100000001063678100","Mixed payment group: 18 accounts transferred 3,422,800 KZT internally. Observed roles include 9 accounts with little observed outflow and 5 possible distributors; no single financial purpose is established."
+61,7,0,3077000.0,"100000002241986100,100000001053894100,100000002594214100,100000004047887100,100000001286703100","Most accounts (6 of 7) lack enough evidence for a specific role. Internal transfers total 3,077,000 KZT; more data is needed to explain the group's purpose."
+62,6,0,2540000.0,"100000004479404100,100000004717647100,100000002922000100,100000002659103100,100000001533161100","Mixed payment group: 6 accounts transferred 2,540,000 KZT internally. Observed roles include 4 accounts without a clear role and 1 possible collector; no single financial purpose is established."
+63,6,0,2534500.0,"100000003747133100,100000004722765100,100000002578653100,100000005075949100,100000006527156100","Possible collection group: its 6 accounts have 10 incoming and 5 outgoing payment links. Internal transfers total 2,534,500 KZT; full account balances remain unknown."
+64,8,0,2473417.91,"100000004906181100,100000008175078100,100000008675322100,100000000557536100,100000008349740100","Most accounts (7 of 8) lack enough evidence for a specific role. Internal transfers total 2,473,417.91 KZT; more data is needed to explain the group's purpose."
+65,7,0,1765600.0,"100000007392365100,100000007865484100,100000008551752100,100000003631015100,100000004976946100","Most accounts (6 of 7) lack enough evidence for a specific role. Internal transfers total 1,765,600 KZT; more data is needed to explain the group's purpose."
+66,10,0,1727065.0,"100000004076740100,100000005519998100,100000004017410100,100000004336312100,100000005932987100","Mixed payment group: 10 accounts transferred 1,727,065 KZT internally. Observed roles include 3 possible distributors and 3 accounts without a clear role; no single financial purpose is established."
+67,14,0,1605604.0,"100000008213966100,100000007382543100,100000000838385100,100000003001661100,100000008655779100","Mixed payment group: 14 accounts transferred 1,605,604 KZT internally. Observed roles include 7 accounts without a clear role and 4 possible distributors; no single financial purpose is established."
+68,4,0,1595700.0,"100000001052945100,100000001131403100,100000004616845100,100000005146665100","Possible collection group: its 4 accounts have 4 incoming and 3 outgoing payment links. Internal transfers total 1,595,700 KZT; full account balances remain unknown."
+69,3,0,1557988.0,"100000008258458100,100000004035925100,100000008619159100","Possible collection group: its 3 accounts have 3 incoming and 2 outgoing payment links. Internal transfers total 1,557,988 KZT; full account balances remain unknown."
+70,9,0,1406982.0,"100000002217161100,100000001445848100,100000007647294100,100000000954884100,100000003006633100","Mixed payment group: 9 accounts transferred 1,406,982 KZT internally. Observed roles include 5 accounts with little observed outflow and 2 accounts without a clear role; no single financial purpose is established."
+71,7,0,1268308.0,"100000008011159100,100000006169033100,100000005754335100,100000003888527100,100000006573438100","Mixed payment group: 7 accounts transferred 1,268,308 KZT internally. Observed roles include 3 accounts with little observed outflow and 2 possible distributors; no single financial purpose is established."
+72,5,0,1189154.0,"100000000291906100,100000004670388100,100000000291908100,100000004722630100,100000004691350100","Mixed payment group: 5 accounts transferred 1,189,154 KZT internally. Observed roles include 2 accounts without a clear role and 1 possible distributor; no single financial purpose is established."
+73,2,0,857500.0,"100000008324800100,100000007390016100","Possible collection group: its 2 accounts have 4 incoming and 2 outgoing payment links. Internal transfers total 857,500 KZT; full account balances remain unknown."
+74,15,0,850450.0,"100000005505655100,100000001526235100,100000001788284100,100000002472632100,100000002984403100","Mixed payment group: 15 accounts transferred 850,450 KZT internally. Observed roles include 9 accounts without a clear role and 2 possible distributors; no single financial purpose is established."
+75,4,0,832800.0,"100000003159641100,100000008625905100,100000001065234100,100000002194320100","Possible collection group: its 4 accounts have 7 incoming and 3 outgoing payment links. Internal transfers total 832,800 KZT; full account balances remain unknown."
+76,2,0,761255.0,"100000000583220100,100000004586598100","Possible collection group: its 2 accounts have 2 incoming and 1 outgoing payment links. Internal transfers total 761,255 KZT; full account balances remain unknown."
+77,6,0,720900.0,"100000008761219100,100000007472293100,100000006638021100,100000008333492100,100000002794374100","Possible collection group: its 6 accounts have 8 incoming and 5 outgoing payment links. Internal transfers total 720,900 KZT; full account balances remain unknown."
+78,3,0,627870.0,"100000008628231100,100000004666651100,100000005664632100","Possible collection group: its 3 accounts have 3 incoming and 2 outgoing payment links. Internal transfers total 627,870 KZT; full account balances remain unknown."
+79,20,0,617900.0,"100000002448088100,100000001427082100,100000003154105100,100000000723383100,100000002185328100","Most accounts (15 of 20) lack enough evidence for a specific role. Internal transfers total 617,900 KZT; more data is needed to explain the group's purpose."
+80,10,0,603900.0,"100000003635170100,100000004209339100,100000002156381100,100000002696152100,100000005602999100","Mixed payment group: 10 accounts transferred 603,900 KZT internally. Observed roles include 3 possible distributors and 2 possible coordinating accounts; no single financial purpose is established."
+81,2,0,584900.0,"100000008430691100,100000007330432100","Small group of 2 accounts with 584,900 KZT transferred internally. Review the observed links; group size alone does not establish its purpose."
+82,3,0,553830.0,"100000003321895100,100000003692843100,100000002371892100","Possible collection group: its 3 accounts have 3 incoming and 2 outgoing payment links. Internal transfers total 553,830 KZT; full account balances remain unknown."
+83,4,0,518000.0,"100000002205022100,100000000629812100,100000003163886100,100000001380107100","Possible collection group: its 4 accounts have 5 incoming and 3 outgoing payment links. Internal transfers total 518,000 KZT; full account balances remain unknown."
+84,4,0,460000.0,"100000006069103100,100000000201868100,100000003192220100,100000006787636100","Possible collection group: its 4 accounts have 6 incoming and 4 outgoing payment links. Internal transfers total 460,000 KZT; full account balances remain unknown."
+85,29,0,446070.0,"100000008460102100,100000001164648100,100000004891562100,100000002706810100,100000008715513100","Most accounts (27 of 29) lack enough evidence for a specific role. Internal transfers total 446,070 KZT; more data is needed to explain the group's purpose."
+86,8,0,389000.0,"100000005507142100,100000002612809100,100000005264874100,100000001825934100,100000000600707100","Mixed payment group: 8 accounts transferred 389,000 KZT internally. Observed roles include 5 accounts without a clear role and 3 possible distributors; no single financial purpose is established."
+87,4,0,332709.0,"100000002513028100,100000004610802100,100000002516862100,100000004780083100","Possible collection group: its 4 accounts have 4 incoming and 3 outgoing payment links. Internal transfers total 332,709 KZT; full account balances remain unknown."
+88,10,0,322010.0,"100000008172352100,100000007322059100,100000004552204100,100000000993112100,100000002691858100","Mixed payment group: 10 accounts transferred 322,010 KZT internally. Observed roles include 5 accounts with little observed outflow and 2 possible distributors; no single financial purpose is established."
+89,5,0,172000.0,"100000005031696100,100000004659919100,100000001223977100,100000002700161100,100000008461217100","Most accounts (4 of 5) lack enough evidence for a specific role. Internal transfers total 172,000 KZT; more data is needed to explain the group's purpose."
+90,7,0,143000.0,"100000004508696100,100000005911352100,100000003962994100,100000005127767100,100000000507799100","Mixed payment group: 7 accounts transferred 143,000 KZT internally. Observed roles include 3 accounts without a clear role and 2 possible distributors; no single financial purpose is established."

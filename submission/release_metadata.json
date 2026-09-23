@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "status": "complete",
-  "run_id": "f35dd311-b92a-473c-82b7-dfc62a7160e4",
-  "started_at": "2026-09-23T11:51:26.054591Z",
-  "completed_at": "2026-09-23T11:51:30.225175Z",
-  "runtime_seconds": 4.170597,
+  "run_id": "874f9652-d343-45c6-84a1-14a99ed18bda",
+  "started_at": "2026-09-23T12:25:15.122431Z",
+  "completed_at": "2026-09-23T12:25:19.687141Z",
+  "runtime_seconds": 4.564717,
   "command": [
     "python",
     "main.py",
@@ -44,18 +44,18 @@
   },
   "outputs": {
     "nodes_roles.csv": {
-      "sha256": "c01bb782305afc7ddabe6c535fd7c269743e00107c22efa58dd8a509ec2ad7e1",
-      "size_bytes": 436969,
+      "sha256": "a41f6c2b46d095fac572ba6d11513efe1a5914b00d3237d9a5f6233975d91814",
+      "size_bytes": 400276,
       "rows": 2248
     },
     "clusters.csv": {
-      "sha256": "0118ad6aa0bc2e068ee83a216a2ea5e8aaa9117e5fc6c1c4f59039e0a001fda7",
-      "size_bytes": 10568,
+      "sha256": "39249f7e16eba6b8eedcc6cf0ad1f838a633eabe066674b0399b1e42c4c62052",
+      "size_bytes": 25383,
       "rows": 91
     },
     "top_nodes.csv": {
-      "sha256": "124df588e4ef65de2718806451c1b1f4d9c208d98a2b835a16a008231f94a446",
-      "size_bytes": 9782,
+      "sha256": "7c828c8824531f746461d1336dce279066c7468b0daf818d145d6fa493e64bbe",
+      "size_bytes": 14780,
       "rows": 50
     }
   },
@@ -70,21 +70,23 @@
     "src/temporal.py": "sha256:05dee021eb47a6a05171aa3554a8fc4b74345f6d8cd3fce32c5cc73c8fc83d0b",
     "src/clustering.py": "sha256:1bf68328d8c88c1291f1fc178fa98e8ee9d457f283473a704fe1bfe7a7a83ee7",
     "src/roles.py": "sha256:9abe199e256da30e38a5a05e758b9ebc06755736bb349c8070d457ae8db80bf3",
-    "src/priority.py": "sha256:71f52fb46efa98b2ae26c3ddfd723b45aea00d4e598a342816b72c8d82b5226f",
-    "src/explanations.py": "sha256:209f2999c2eadec6c1e8d3addd7885ed5c8814e22accb51daf98559c443a1048",
-    "src/exports.py": "sha256:a0797b9bb856c2a71047e6b464b341bff4433eb8d1f48c1634e75ed21828db22",
+    "src/priority.py": "sha256:14db0ba94018089113125314d3c5e534e4c91ffd86e3c9c4f7f908aaccb1213c",
+    "src/explanations.py": "sha256:fa335531033079d7391106df656c0821eb6bb633cdf5de59905f710ba952513a",
+    "src/exports.py": "sha256:1944634f1d3038c4e6fdc32379d2b50f73fc71b709a609e46b9a9ab55426c7de",
     "src/resilience.py": "sha256:03ff33123296cc24c17350fa2e17de214c529dfdaf7c641cffe86022316b00fa",
     "validate_submission.py": "sha256:62b9ed4ea7ea9dc7d9ef6c58626ff409572a729258c3e1b60e151534640d8f91",
-    "pipeline.py": "sha256:323d9464bea433869451fe39b40ea05cd4278f80b2c5d3dc025a01b2445ca5fc",
+    "pipeline.py": "sha256:4b53ad8b56b48139ec037d4e2d803778d99d810c533ebac92dfc29a30097644b",
     "main.py": "sha256:d2fb1152ac7518912249b4b35a3e40b10beeb01387b1dfae947578f29ffa123c",
-    "app.py": "sha256:8bae87d38b2f06bce354a8b613581bba838fd085e876062a891b643c8838123d",
+    "app.py": "sha256:05b92aa9834e07ce9c85dd1ca742c8f8e782dd0ccbced208503c11187cc9e2b1",
     "src/workspace.py": "sha256:d708a215c27f7013d76ea0c67c1cac88101907f13e69ed04f9c73bd8c5599e99",
-    "src/ai_assistant.py": "sha256:f6ea06720e4d3506a494e52e44d561bca4646f28155e07bcd58da2b7ceb0d761",
+    "src/ai_assistant.py": "sha256:e08d955013274e5cbd063612d073786b39c6344b4ae389cf4a9b350688fc081b",
+    "src/config.py": "sha256:e7c87f519e94928251d5670656908665fe1a25accfcb66ad55d2c3f275c57fef",
     "documentation/feature-contract.md": "sha256:11d1215d9deb366b9705c283b15d7d743b854b36dc4b2c4d8e7a480e96c5f2a0",
     "documentation/data-quality.md": "sha256:6c0ac35fe7aa213b4fa7ceb498dd655b165439612b53801fcb2717f8fef1a99c",
-    "documentation/decision-rules.md": "sha256:32f36da6730d0dac8d53ba0d3e53f4f0a4821a7243d09ba6bfebfcbcece02826",
+    "documentation/decision-rules.md": "sha256:af95fee87034b848eba1fc86a536061337c53cec5700c5bfdb59123dbce11089",
     "requirements.txt": "sha256:587473f801fb1b7fde993d18c98542721e38f4b18c479457deb1016aac35b376",
     "requirements-dev.txt": "sha256:cb2bf3b1216c09300c178cf696525e5728528d20df3b735b992aadf8023c287e",
+    "requirements-ai.txt": "sha256:7dccdf1c618738626435749c32d20119ec4d6eb3c0645e47561bae08e3af1501",
     "constraints.txt": "sha256:cdf4a220d50df3ceac549fbe0bc3e54e55b6fb58dfeb27b59b81b5054de6c353"
   },
   "environment": {
@@ -99,15 +101,15 @@
       "networkx": "3.6.1",
       "streamlit": "1.64.0",
       "pyvis": "0.3.2",
-      "openai": null
+      "openai": "3.19.0"
     }
   },
   "git": {
-    "revision": "c0a137a635b982edea69aa25e7c8aa18648c57f6",
+    "revision": "0efe44cf6a2cfbd97d19b2d21573c1b46a59e537",
     "dirty": null,
     "source": "environment"
   },
   "validation": "strict artifact consistency; analytical interpretation remains a separate review",
   "package_type": "submission",
-  "analytics_run_metadata_sha256": "e38419595d9dedde0ee63921a4fd7a3a1ba980e7cf245ef93d0bcf8b061b0991"
+  "analytics_run_metadata_sha256": "84420e2d5287df56037ef3d9b4c283d869e7e0fcb7ae98003b5db2de18ae07b4"
 }
