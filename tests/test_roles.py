@@ -1,6 +1,10 @@
+import numpy as np
 import pandas as pd
+import pytest
 
-from src.roles import assign_roles
+from src.graph_features import percentile_rank
+from src.priority import WEIGHTS, score_priority
+from src.roles import assign_roles, percentile
 
 
 def test_role_assignment_is_valid_and_cutoff_is_not_terminal():
@@ -39,5 +43,183 @@ def test_invalid_seed_ratio_does_not_poison_role_score():
                            "fanout_share": 1, "betweenness": 0.5, "pagerank": 0.5,
                            "cross_cluster_out_deg": 1, "cross_cluster_degree": 1, "total_kzt": 1000}])
     result = assign_roles(frame).iloc[0]
-    assert result.role in {"distributor", "peripheral"}
+    assert result.role in {"distributor", "coordinator", "peripheral"}
     assert 0 <= result.role_score <= 1
+
+
+def feature_row(**overrides):
+    row = {"gid": 1, "is_seed": False, "depth": 2, "in_deg": 1, "out_deg": 1,
+           "in_tx": 1, "out_tx": 1, "in_kzt": 100.0, "out_kzt": 100.0,
+           "seed_reach_count": np.nan, "betweenness": np.nan, "pagerank": np.nan,
+           "cross_cluster_degree": np.nan, "cross_cluster_out_deg": 0,
+           "total_kzt": 200.0, "pass_through": 1.0, "relay_2d_ratio": 1.0,
+           "same_day_flow_ratio": 1.0, "fanout_share": 1.0,
+           "peer_anomaly_score": 0.0}
+    row.update(overrides)
+    return row
+
+
+@pytest.mark.parametrize("values", [[0.2], [5.0, np.nan], [2.0, 2.0, 2.0],
+                                    [1.0, 2.0, 2.0, 4.0, np.nan], [np.nan]])
+def test_decision_percentiles_use_shared_policy(values):
+    series = pd.Series(values)
+    pd.testing.assert_series_equal(percentile(series), percentile_rank(series))
+
+
+def test_nonfinite_percentiles_stay_unavailable():
+    result = percentile(pd.Series([np.inf, -np.inf, np.nan, 0.2]))
+    assert result.iloc[:3].isna().all()
+    assert result.iloc[3] == 1.0
+
+
+@pytest.mark.parametrize("ratio,relay,expected", [
+    (0.5, 0.0, True), (1.5, 0.0, True), (0.499999, 0.0, False),
+    (1.500001, 0.0, False), (0.1, 0.5, True), (0.1, 0.499999, False),
+])
+def test_transit_structural_thresholds_are_inclusive(ratio, relay, expected):
+    row = feature_row(pass_through=ratio, out_kzt=100 * ratio, relay_2d_ratio=relay)
+    result = assign_roles(pd.DataFrame([row])).iloc[0]
+    assert bool(result.role_transit_gate) == expected
+
+
+@pytest.mark.parametrize("ratio,expected", [(0.0, True), (0.1, True), (0.100001, False)])
+def test_terminal_observed_amount_threshold(ratio, expected):
+    row = feature_row(pass_through=ratio, out_kzt=100 * ratio, relay_2d_ratio=0)
+    result = assign_roles(pd.DataFrame([row])).iloc[0]
+    assert bool(result.role_terminal_gate) == expected
+
+
+@pytest.mark.parametrize("changes", [{"is_seed": True}, {"depth": 4},
+                                    {"in_kzt": 0}, {"depth": np.nan}])
+def test_terminal_requires_observed_nonseed_interior_inflow(changes):
+    row = feature_row(out_deg=0, out_kzt=0, pass_through=0, **changes)
+    result = assign_roles(pd.DataFrame([row])).iloc[0]
+    assert not result.role_terminal_gate
+    assert result.role != "terminal"
+
+
+@pytest.mark.parametrize("fanout,eligible", [(1.0, True), (0.999999, False)])
+def test_exact_role_evidence_threshold_and_peripheral_fallback(fanout, eligible):
+    rows = [feature_row(gid=i, in_deg=0, in_tx=0, in_kzt=0, out_deg=i+2,
+                        out_tx=i+2, out_kzt=i+2, cross_cluster_out_deg=i+2,
+                        seed_reach_count=1, betweenness=0, pagerank=1,
+                        cross_cluster_degree=0, fanout_share=fanout) for i in range(20)]
+    result = assign_roles(pd.DataFrame(rows)).set_index("gid").loc[9]
+    assert bool(result.role_distributor_eligible) == eligible
+    assert result.role == ("distributor" if eligible else "peripheral")
+    assert result.role_score == pytest.approx(0.55 if eligible else 0.5499999)
+    assert "0.55" in result.role_rule
+
+
+@pytest.mark.parametrize("rank,expected", [(9, True), (8, False)])
+def test_coordinator_requires_two_signals_at_ninetieth_percentile(rank, expected):
+    rows = [feature_row(gid=i, seed_reach_count=i+1, betweenness=i+1,
+                        pagerank=1, cross_cluster_degree=0) for i in range(10)]
+    result = assign_roles(pd.DataFrame(rows)).set_index("gid").loc[rank-1]
+    assert bool(result.role_coordinator_gate) == expected
+
+
+def test_coordinator_wins_exact_tie_and_isolated_singleton_is_peripheral():
+    row = feature_row(in_deg=2, out_deg=2, seed_reach_count=2,
+                      betweenness=1, pagerank=1, cross_cluster_degree=1, retention=1,
+                      balance_score=1)
+    result = assign_roles(pd.DataFrame([row])).iloc[0]
+    assert result.role_coordinator_score == result.role_consolidator_score == result.role_distributor_score == 1
+    assert result.role == "coordinator"
+    isolated = feature_row(in_deg=0, out_deg=0, in_tx=0, out_tx=0, in_kzt=0, out_kzt=0,
+                          is_seed=True, depth=0, seed_reach_count=1, pagerank=1,
+                          betweenness=0, cross_cluster_degree=0)
+    result = assign_roles(pd.DataFrame([isolated])).iloc[0]
+    assert result.role == "peripheral"
+    assert result.role_score == 0
+    assert not result.role_coordinator_gate
+    assert "No structural gate passed" in result.role_rule_details
+
+
+def test_consolidator_then_distributor_win_remaining_exact_ties():
+    row = feature_row(in_deg=2, out_deg=2, retention=1, balance_score=1)
+    result = assign_roles(pd.DataFrame([row])).iloc[0]
+    assert result.role_consolidator_score == result.role_distributor_score == result.role_transit_score == 1
+    assert result.role == "consolidator"
+    row["in_deg"] = 1
+    result = assign_roles(pd.DataFrame([row])).iloc[0]
+    assert result.role_distributor_score == result.role_transit_score == 1
+    assert result.role == "distributor"
+
+
+@pytest.mark.parametrize("changes", [{"is_seed": True}, {"depth": 4},
+                                    {"boundary_censored": True}, {"truncated_by_depth": True}])
+def test_unavailable_observation_ratios_are_ignored_and_weights_renormalized(changes):
+    row = feature_row(in_deg=2, out_deg=2, seed_reach_count=2, retention=0.3,
+                      balance_score=0.3, **changes)
+    result = assign_roles(pd.DataFrame([row])).iloc[0]
+    assert result.role_consolidator_available_weight == pytest.approx(0.9)
+    assert result.role_distributor_available_weight == pytest.approx(0.9)
+    assert result.role_consolidator_score == pytest.approx(1)
+    assert result.role_distributor_score == pytest.approx(1)
+    assert not result.decision_pass_through_valid
+    assert not result.decision_relay_2d_ratio_valid
+    assert not result.role_transit_gate
+
+
+def test_explicit_invalid_flags_are_not_overridden_by_ratio_fallback():
+    row = feature_row(retention=0.3, retention_valid=False, balance_score_available=False,
+                      relay_2d_ratio_valid=False, same_day_flow_ratio_available=False)
+    result = assign_roles(pd.DataFrame([row])).iloc[0]
+    for name in ("retention", "balance_score", "relay_2d_ratio", "same_day_flow_ratio"):
+        assert not result[f"decision_{name}_valid"]
+        assert pd.isna(result[f"decision_{name}"])
+
+
+def test_missing_balance_is_derived_from_observed_pass_through():
+    result = assign_roles(pd.DataFrame([feature_row(pass_through=1, balance_score=np.nan)])).iloc[0]
+    assert result.decision_balance_score == 1
+    assert result.decision_retention == 0
+
+
+def test_empty_and_gid_indexed_frames_keep_api_contract():
+    empty = pd.DataFrame({"gid": pd.Series(dtype="int64")})
+    result = assign_roles(empty)
+    assert result.empty
+    assert {"gid", "role", "role_score", "role_rule", "role_rule_details"} <= set(result.columns)
+    assert score_priority(empty, result).empty
+    indexed = pd.DataFrame([feature_row()]).set_index("gid")
+    assert assign_roles(indexed).gid.tolist() == [1]
+
+
+def test_priority_contributions_sum_and_explain_largest_ranking_terms():
+    features = pd.DataFrame([feature_row(gid=1, seed_reach_count=5, betweenness=0.7,
+                                        pagerank=0.2, cross_cluster_degree=3,
+                                        peer_anomaly_score=0.4),
+                             feature_row(gid=2, seed_reach_count=1, betweenness=0.1,
+                                         pagerank=0.1, cross_cluster_degree=0)])
+    roles = pd.DataFrame({"gid": [1, 2], "role": ["transit", "peripheral"], "role_score": [0.8, 0.0]})
+    result = score_priority(features, roles)
+    contributions = result[[f"priority_{name}_contribution" for name in WEIGHTS]]
+    np.testing.assert_allclose(contributions.sum(axis=1), result.priority_score, rtol=0, atol=1e-14)
+    reason = result.loc[0, "priority_explanation"]
+    assert "transit rule strength 0.80 (+0.200)" in reason
+    assert "reachable from 5 seeds (+0.200)" in reason
+    assert "path centrality at percentile 100.0 (+0.150)" in reason
+    assert "in_deg" not in reason and "betweenness" not in reason
+    repeated = score_priority(features, roles)
+    pd.testing.assert_frame_equal(result, repeated)
+
+
+def test_priority_unavailable_temporal_inputs_have_zero_contribution_and_no_renormalization():
+    features = pd.DataFrame([feature_row(is_seed=True, relay_2d_ratio=1.0,
+                                        same_day_flow_ratio=1.0, peer_anomaly_score=np.inf)])
+    roles = pd.DataFrame({"gid": [1], "role": ["peripheral"], "role_score": [0.0]})
+    result = score_priority(features, roles).iloc[0]
+    assert not result.priority_temporal_signal_available
+    assert result.priority_temporal_signal_contribution == 0
+    assert result.priority_peer_anomaly_score_contribution == 0
+    assert result.priority_total_kzt_contribution == 0.10
+
+
+def test_priority_without_observations_explains_zero_honestly():
+    features = pd.DataFrame({"gid": [1]})
+    roles = pd.DataFrame({"gid": [1], "role": ["peripheral"], "role_score": [0.0]})
+    result = score_priority(features, roles).iloc[0]
+    assert result.priority_score == 0
+    assert "no positive contribution" in result.priority_explanation
