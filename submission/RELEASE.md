@@ -3,9 +3,10 @@
 ## Implementation and artifacts
 
 Generated from clean implementation commit
-`0efe44cf6a2cfbd97d19b2d21573c1b46a59e537` on `testing`, which includes all three
+`1d80035259e1efddd90efd3c95f627a8dfcd1369` on `testing`, which includes all three
 members' branches, the complete analyst workflow, readable explanations and
-optional-AI configuration.
+optional-AI configuration, plus responsive horizontal chart labels and readable
+node hover cards.
 
 | Artifact | Rows | Columns |
 |---|---:|---:|
@@ -15,16 +16,16 @@ optional-AI configuration.
 | auxiliary `out/node_features.parquet` | 2,248 | 180 |
 | auxiliary `out/resilience.csv` | 5 | 6 |
 
-The three required CSVs now contain clearer text: 2,248 node explanations,
-91 group hypotheses and 50 priority reasons. Every other CSV field is exactly
-unchanged from release `960e71a`: gids, roles, scores, ranks, memberships, counts,
+The three required CSVs are byte-identical to release `939a4c0`, retaining its
+2,248 readable node explanations, 91 group hypotheses and 50 priority reasons.
+This UI update preserves all gids, roles, scores, ranks, memberships, counts,
 turnover and top members. Node evidence has at most **183 characters** (limit 200).
 The queue uses the published `top_nodes.csv.why` text and shows the selected
 account's full reason. Rich outputs remain in ignored `out/`.
 
-Final release run: `874f9652-d343-45c6-84a1-14a99ed18bda`.
-Pipeline time including publication: **4.58 seconds**.
-Manifest computation/validation time: **4.564717 seconds**.
+Final release run: `359ea5d7-1505-4a40-a8bd-de345bfd0b12`.
+Pipeline time including publication: **4.34 seconds**.
+Manifest computation/validation time: **4.325137 seconds**.
 The 300-second requirement excludes dependency installation and image building.
 
 ## Clean release procedure
@@ -58,16 +59,20 @@ all hop-4/seed observation limits.
 
 ## Tests and application
 
-- **604 tests passed in 104.23 seconds**, no failures or skips, with source mounted
+- **618 tests passed in 107.46 seconds**, no failures or skips, with source mounted
   read-only into the pinned Python 3.11 test image and external networking disabled.
 - Real Chromium tested all seven pages, graph canvases, exact-gid lookup,
   navigation, regeneration/reload, review-list selection/download, private
   upload/run, submission ZIP download, malformed-upload preservation and reset.
-  It observed no external asset requests; final browser test time was 27.43 seconds.
+  It observed no external asset requests; final browser test time was 28.67 seconds.
   Upload replacement waits for the server to acknowledge the new selection.
 - Regression coverage includes strict schemas/reconciliation, exact numerical
   features, input permutations, censored derived ratios, source/output races,
   downloaded-run identity, stale selections and grounded AI edge citations.
+- Chart tests preserve category order and exact values while keeping labels
+  horizontal. Real Chromium hover tests verify exact gids, multiline text and
+  wrapping at 320px, including hostile HTML labels without script execution or
+  external requests. The rebuilt overview was also checked visually.
 - Compose analytics exited successfully; the rebuilt app is healthy at
   `127.0.0.1:8501`. Source data and viewer outputs remain read-only mounts.
 - The actual OpenAI SDK completed a tool-call/citation round trip using an

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -486,6 +487,47 @@ def nav_to_node(gid: int) -> None:
     st.session_state["pending_navigation"] = {"page": "Node card", "gid": int(gid)}
 
 
+def category_chart(values: pd.Series, *, category_title: str, value_title: str,
+                   value_format: str = ",.0f", height: int | None = None) -> alt.Chart:
+    """Fit categorical bars to their container with horizontal, readable labels.
+
+    Categories keep their supplied order. Putting long names beside the bars
+    avoids rotating or crowding labels in narrow columns. Exact values remain
+    available in hover tooltips, including numeric priority-bin boundaries.
+    """
+    frame = pd.DataFrame({"category": values.index.astype(str), "value": values.to_numpy()})
+    return (alt.Chart(frame).mark_bar(cornerRadiusEnd=3).encode(
+        y=alt.Y("category:N", sort=None, title=None,
+                axis=alt.Axis(labelAngle=0, labelOverlap=False, labelLimit=180, labelPadding=8)),
+        x=alt.X("value:Q", title=value_title, scale=alt.Scale(zero=True),
+                axis=alt.Axis(labelAngle=0, titleAngle=0, tickCount=3, format=value_format)),
+        tooltip=[alt.Tooltip("category:N", title=category_title),
+                 alt.Tooltip("value:Q", title=value_title, format=value_format)],
+    ).properties(width="container", height=height or max(180, len(frame) * 28))
+      .configure_view(stroke=None))
+
+
+def activity_chart(daily: pd.DataFrame) -> alt.Chart:
+    """Show date-level incoming/outgoing amounts with a short horizontal date axis."""
+    frame = daily.rename_axis("date").reset_index().melt(
+        id_vars="date", var_name="direction", value_name="amount_kzt")
+    return (alt.Chart(frame).mark_bar().encode(
+        x=alt.X("date:T", title="Date",
+                axis=alt.Axis(labelAngle=0, titleAngle=0, format="%d %b", tickCount=5,
+                              labelOverlap="greedy", labelBound=True)),
+        xOffset=alt.XOffset("direction:N", sort=["Incoming KZT", "Outgoing KZT"]),
+        y=alt.Y("amount_kzt:Q", title=None,
+                axis=alt.Axis(labelAngle=0, format="~s", tickCount=5)),
+        color=alt.Color("direction:N", title=None,
+                        scale=alt.Scale(domain=["Incoming KZT", "Outgoing KZT"],
+                                        range=["#0284c7", "#ea580c"]),
+                        legend=alt.Legend(orient="top", direction="horizontal", columns=2)),
+        tooltip=[alt.Tooltip("date:T", title="Date", format="%Y-%m-%d"),
+                 alt.Tooltip("direction:N", title="Flow"),
+                 alt.Tooltip("amount_kzt:Q", title="KZT", format=",.2f")],
+    ).properties(width="container", height=260).configure_view(stroke=None))
+
+
 def metric_cards(data: InvestigationData, nodes: pd.DataFrame) -> None:
     roles_col = first_column(nodes, "role")
     seed_col = first_column(nodes, "is_seed", "seed")
@@ -502,14 +544,16 @@ def metric_cards(data: InvestigationData, nodes: pd.DataFrame) -> None:
     with left:
         st.subheader("Roles")
         if roles_col:
-            st.bar_chart(nodes[roles_col].fillna("unassigned").astype(str).value_counts())
+            st.altair_chart(category_chart(nodes[roles_col].fillna("unassigned").astype(str).value_counts(),
+                category_title="Role", value_title="Accounts", height=220), width="stretch")
         else:
             st.info("Role labels will appear after `nodes_roles.csv` is exported.")
     with right:
         st.subheader("Nodes by sampled depth")
         depth_col = first_column(nodes, "depth")
         if depth_col:
-            st.bar_chart(nodes[depth_col].value_counts().sort_index())
+            st.altair_chart(category_chart(nodes[depth_col].value_counts().sort_index(),
+                category_title="Depth", value_title="Accounts", height=220), width="stretch")
         else:
             st.info("Depth is not present in the loaded export or source nodes file.")
     score_col = first_column(nodes, "priority_score", "priority")
@@ -520,7 +564,8 @@ def metric_cards(data: InvestigationData, nodes: pd.DataFrame) -> None:
             bins = pd.cut(scores, bins=min(12, max(2, scores.nunique())))
             counts = bins.value_counts(sort=False)
             counts.index = counts.index.astype(str)
-            st.bar_chart(counts, height=180)
+            st.altair_chart(category_chart(counts, category_title="Priority range", value_title="Accounts"),
+                            width="stretch")
 
 
 def overview_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
@@ -800,7 +845,8 @@ def render_temporal_evidence(data: InvestigationData, row: pd.Series, gid: int) 
         if daily.empty:
             st.info("No sampled dated activity for this gid.")
             return
-        st.bar_chart(daily, stack=False)
+        st.caption("Observed daily transfers · KZT")
+        st.altair_chart(activity_chart(daily), width="stretch")
 
 
 def render_pattern_evidence(row: pd.Series) -> None:
@@ -907,8 +953,10 @@ def pyvis_html(edges: pd.DataFrame, nodes: pd.DataFrame, focus_gid: int | None =
         seed = as_bool(value(row, "is_seed", "seed", default=False))
         priority = as_number(value(row, "priority_score", "priority", default=0))
         label = str(gid) + (" ★" if seed else "")
-        title = "<br>".join([f"<b>gid {html.escape(str(gid))}</b>", f"role: {html.escape(role)}",
-                               f"cluster: {html.escape(str(cluster))}", f"priority: {priority:.3f}", f"seed: {seed}"])
+        # The bundled vis-network renders string titles with innerText. Keep
+        # these as plain text: HTML tags would be displayed literally.
+        title = "\n".join([f"gid {gid}", f"Role: {role}", f"Cluster: {cluster}",
+                           f"Priority: {priority:.3f}", f"Seed: {'Yes' if seed else 'No'}"])
         background = cluster_color(cluster) if color_by == "Cluster" else ROLE_COLORS.get(role, "#94a3b8")
         highlighted = highlight_cluster is not None and str(cluster) == highlight_cluster
         if highlight_cluster is not None and not highlighted:
@@ -922,7 +970,23 @@ def pyvis_html(edges: pd.DataFrame, nodes: pd.DataFrame, focus_gid: int | None =
         amount, count = as_number(getattr(edge, "sum_kzt", 0)), getattr(edge, "n_tx", "?")
         graph.add_edge(str(edge.src), str(edge.dst), width=max(1, min(10, math.log1p(amount) / 2)),
                        title=f"{amount:,.0f} KZT · {count} transaction(s)")
-    content = graph.generate_html(notebook=False)
+    # PyVis switches to an innerHTML popup if any title contains "href".
+    # Always use vis-network's text tooltip, including for imported labels.
+    # Its notebook flag selects this supplied template without other changes.
+    template_source, _, _ = graph.templateEnv.loader.get_source(graph.templateEnv, graph.path)
+    graph.template = graph.templateEnv.from_string("{% set tooltip_link = false %}" + template_source)
+    content = graph.generate_html(notebook=True)
+    content = content.replace("</head>", """<style id="money-graph-tooltip-style">
+        #mynetwork .vis-tooltip {
+            white-space: pre-line;
+            max-width: min(360px, calc(100vw - 32px));
+            overflow-wrap: anywhere;
+            box-sizing: border-box;
+            font-size: 13px;
+            line-height: 1.4;
+            padding: 8px 10px;
+        }
+        </style></head>""", 1)
     # PyVis embeds vis-network but its template still adds unused Bootstrap CDN
     # tags. No filter/select menus use Bootstrap; remove these runtime requests.
     content = re.sub(r'<script\b[^>]*\bsrc\s*=\s*["\'][^"\']+["\'][^>]*>\s*</script>', "", content, flags=re.I)
@@ -1043,7 +1107,8 @@ def cluster_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     with right:
         st.subheader("Role composition")
         if role_col:
-            st.bar_chart(members[role_col].fillna("unassigned").astype(str).value_counts())
+            st.altair_chart(category_chart(members[role_col].fillna("unassigned").astype(str).value_counts(),
+                category_title="Role", value_title="Accounts"), width="stretch")
         else:
             st.info("Roles are not exported.")
     if st.button("Open this cluster in Network explorer"):
@@ -1064,15 +1129,20 @@ def resilience_page(data: InvestigationData) -> None:
     components_col = first_column(frame, "n_components", "n_weak_components", "number_of_components", "components")
     fraction = first_column(frame, "fraction_remaining", "fraction_baseline_largest", "remaining_fraction")
     st.dataframe(frame, width="stretch", hide_index=True)
+    if scenario:
+        frame[scenario] = frame[scenario].astype(str).str.replace("_", " ", regex=False).str.capitalize()
     if scenario and largest:
         st.subheader("Largest component after ranked removals")
-        st.bar_chart(frame.set_index(scenario)[largest], sort=False)
+        st.altair_chart(category_chart(frame.set_index(scenario)[largest],
+            category_title="Scenario", value_title="Accounts"), width="stretch")
     if scenario and components_col:
         st.subheader("Number of components")
-        st.bar_chart(frame.set_index(scenario)[components_col], sort=False)
+        st.altair_chart(category_chart(frame.set_index(scenario)[components_col],
+            category_title="Scenario", value_title="Components"), width="stretch")
     if scenario and fraction:
         st.subheader("Largest component as a fraction of its baseline size")
-        st.bar_chart(frame.set_index(scenario)[fraction], sort=False)
+        st.altair_chart(category_chart(frame.set_index(scenario)[fraction],
+            category_title="Scenario", value_title="Share of baseline", value_format=".0%"), width="stretch")
 
 
 def ai_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
