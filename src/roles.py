@@ -42,17 +42,34 @@ def _flag(frame: pd.DataFrame, name: str, default: bool = False) -> pd.Series:
     return frame[name].fillna(default).astype(bool)
 
 
+def ratio_validity_flags(name: str) -> tuple[str, ...]:
+    """List producer and legacy validity flags that must all allow a ratio.
+
+    The feature contract uses shared/short names for temporal and flow-share
+    flags. Retain generic aliases for existing callers; an explicit false or
+    missing value in any present flag takes precedence over a true alias.
+    """
+    producer_flags = {
+        "relay_2d_ratio": ("relay_2d_valid",),
+        "same_day_flow_ratio": ("same_day_flow_valid",),
+        "fanin_share": ("flow_share_valid",),
+        "fanout_share": ("flow_share_valid",),
+    }
+    return (*producer_flags.get(name, ()), f"{name}_valid", f"{name}_available")
+
+
 def observed_ratio(frame: pd.DataFrame, name: str) -> pd.Series:
     """Return ratios only where seed/cutoff and explicit flags allow them.
 
-    Feature producers can set ``<name>_valid`` or ``<name>_available`` to False.
+    Honor the feature contract's ``relay_2d_valid``, ``same_day_flow_valid``
+    and ``flow_share_valid``, plus generic legacy validity/availability aliases.
     Missing explicit flags are unavailable. Depth 4 and seed ratios are invalid
     even for older feature data containing artificial zeroes instead of missing.
     """
     valid = ~_flag(frame, "is_seed")
     valid &= ~numeric_column(frame, "depth").ge(4)
     valid &= ~_flag(frame, "boundary_censored") & ~_flag(frame, "truncated_by_depth")
-    for flag in (f"{name}_valid", f"{name}_available"):
+    for flag in ratio_validity_flags(name):
         if flag in frame:
             valid &= _flag(frame, flag)
     values = numeric_column(frame, name).where(valid)

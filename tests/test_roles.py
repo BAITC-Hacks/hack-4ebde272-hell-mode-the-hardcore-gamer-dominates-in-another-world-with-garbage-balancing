@@ -4,7 +4,7 @@ import pytest
 
 from src.graph_features import percentile_rank
 from src.priority import WEIGHTS, score_priority
-from src.roles import assign_roles, percentile
+from src.roles import assign_roles, observed_ratio, percentile
 
 
 def test_role_assignment_is_valid_and_cutoff_is_not_terminal():
@@ -169,6 +169,50 @@ def test_explicit_invalid_flags_are_not_overridden_by_ratio_fallback():
     for name in ("retention", "balance_score", "relay_2d_ratio", "same_day_flow_ratio"):
         assert not result[f"decision_{name}_valid"]
         assert pd.isna(result[f"decision_{name}"])
+
+
+@pytest.mark.parametrize("metric,producer_flag", [
+    ("relay_2d_ratio", "relay_2d_valid"),
+    ("same_day_flow_ratio", "same_day_flow_valid"),
+    ("fanin_share", "flow_share_valid"),
+    ("fanout_share", "flow_share_valid"),
+])
+@pytest.mark.parametrize("invalid", [False, np.nan, pd.NA])
+def test_producer_validity_flags_override_numeric_ratios_and_true_aliases(metric, producer_flag, invalid):
+    frame = pd.DataFrame([feature_row(**{
+        metric: 1.0, producer_flag: invalid, f"{metric}_valid": True,
+        f"{metric}_available": True,
+    })])
+    assert observed_ratio(frame, metric).isna().all()
+    if metric != "fanin_share":
+        result = assign_roles(frame).iloc[0]
+        assert not result[f"decision_{metric}_valid"]
+        assert pd.isna(result[f"decision_{metric}"])
+
+
+@pytest.mark.parametrize("metric,producer_flag", [
+    ("relay_2d_ratio", "relay_2d_valid"),
+    ("same_day_flow_ratio", "same_day_flow_valid"),
+    ("fanout_share", "flow_share_valid"),
+])
+def test_true_producer_flag_preserves_values_but_cannot_override_false_legacy_flag(metric, producer_flag):
+    frame = pd.DataFrame([feature_row(**{metric: 0.75, producer_flag: True})])
+    assert observed_ratio(frame, metric).iloc[0] == 0.75
+    frame[f"{metric}_available"] = False
+    assert observed_ratio(frame, metric).isna().all()
+
+
+@pytest.mark.parametrize("invalid", [False, np.nan, pd.NA])
+def test_priority_honors_feature_contract_temporal_flags(invalid):
+    features = pd.DataFrame([feature_row(
+        relay_2d_ratio=1.0, relay_2d_valid=invalid,
+        same_day_flow_ratio=1.0, same_day_flow_valid=invalid,
+    )])
+    roles = pd.DataFrame({"gid": [1], "role": ["peripheral"], "role_score": [0.0]})
+    result = score_priority(features, roles).iloc[0]
+    assert not result.priority_temporal_signal_available
+    assert pd.isna(result.priority_temporal_signal_value)
+    assert result.priority_temporal_signal_contribution == 0.0
 
 
 def test_missing_balance_is_derived_from_observed_pass_through():

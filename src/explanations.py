@@ -5,6 +5,8 @@ import math
 
 import pandas as pd
 
+from .roles import ratio_validity_flags
+
 
 def _number(value, digits=2) -> str:
     try:
@@ -50,7 +52,7 @@ def _percentile(row, name) -> float:
 
 
 def _ratio(row, name) -> float:
-    for flag in (f"decision_{name}_valid", f"{name}_valid", f"{name}_available"):
+    for flag in (f"decision_{name}_valid", *ratio_validity_flags(name)):
         if flag in row and not _flag(row, flag):
             return float("nan")
     value = row.get(f"decision_{name}", row.get(name))

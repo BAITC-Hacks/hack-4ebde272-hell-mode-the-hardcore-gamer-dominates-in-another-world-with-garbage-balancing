@@ -54,9 +54,9 @@ pinning and the UI loader; those integration files are outside this change.
 The full validator API is
 `validate_submission(out_dir, expected_nodes=2248, source_nodes=None, features=None,
 *, source_edges=None, graph=None)`. Supply either `source_edges` or `graph` for
-independent directed-turnover reconciliation. Existing pipeline calls validate
-against exported `internal_out_kzt`; Member 3 can add `source_edges=edges` for a
-raw-data check at that point. The standalone command already performs it:
+independent directed-turnover reconciliation. The integrated pipeline supplies
+raw edges and reconciles them with exported `internal_out_kzt`. The standalone
+command performs the same independent source check:
 
 ```bash
 python -O validate_submission.py --out ./out/brief-decisions --data ./data
@@ -87,7 +87,13 @@ bounded by [0,1].
 Inbound-dependent ratios are unavailable for seeds, depth >=4, or a true
 `boundary_censored`/`truncated_by_depth` flag. Explicit `<metric>_valid` and
 `<metric>_available` flags, when supplied, also gate use: false or missing flags
-mean unavailable. The ratio fields are pass-through, retained share, flow balance,
+mean unavailable. The actual feature-producer flags are also honored:
+`relay_2d_valid` for `relay_2d_ratio`, `same_day_flow_valid` for
+`same_day_flow_ratio`, and shared `flow_share_valid` for `fanin_share` and
+`fanout_share`. Every present flag must be true; a false/missing producer flag
+cannot be overridden by a true legacy alias, or vice versa. Role scoring,
+priority scoring and explanations share this flag policy.
+The ratio fields are pass-through, retained share, flow balance,
 outgoing relationship share and the two temporal ratios. The absence of a flag
 column does not itself suppress a measurement. Negative/nonfinite ratios are invalid.
 Positive observed incoming amount is required for pass-through, retained share
@@ -97,11 +103,15 @@ and balance. A missing retained share may be derived from valid pass-through as
 An explicit false/missing validity flag also blocks these fallback derivations.
 
 Temporal overlap is date-level evidence. It cannot establish intraday order or
-that the same money moved onward. The current shared temporal helper describes
-relay as the share of incoming-active dates with any outgoing activity on D,
-D+1 or D+2; same-day ratio is the share of outgoing amount on incoming-active
-dates. Member 1 owns end-of-window availability and denominator changes. Decisions
-honor explicit availability flags and do not infer completeness from a zero.
+that the same money moved onward. Relay is the share of **eligible incoming-active
+dates** with any outgoing activity on D, D+1 or D+2. A date is eligible only when
+D+2 is no later than the latest observed transaction date; incomplete follow-up
+dates are excluded from both numerator and denominator, even if an early outgoing
+observation exists. `relay_2d_eligible_days`, `relay_2d_matched_days` and
+`relay_2d_censored_days` expose this calculation. No eligible date makes relay
+unavailable, rather than zero. Same-day ratio is the share of outgoing amount on
+incoming-active dates. Both ratios are unavailable for seeds and depth-4 nodes;
+decisions honor the producer flags and do not infer completeness from a zero.
 
 ## Role formulas, gates and rationale
 
@@ -253,7 +263,10 @@ use any three exact decimal gids and the same lookup workflow. Include actual
 rule thresholds, contributing numbers and unavailable observations in each answer.
 Do not claim accuracy without labels or infer customer attributes.
 
-## Verification and integration handoff
+## Historical branch verification and integration handoff
+
+The measurements below describe the decision branch before final integration.
+See `submission/RELEASE.md` for the current integrated verification record.
 
 On the shared `testing` base `b601280`, the unchanged pipeline completed with
 Docker networking disabled in **6.31 seconds** on the supplied data. Output was
@@ -288,7 +301,8 @@ Example candidates selected from this generated artifact, for a demo rehearsal:
 
 Re-select candidates after feature/integration updates. The supplied sample is
 July 2026 intrabank transfers of at least 5,000 KZT; external activity and smaller
-transfers are unobserved. Member 1 still owns temporal month-end censoring and
-new route/anomaly evidence. This engine honors explicit availability flags, but
-does not invent full observation windows when the current feature table lacks
-those flags. Boundary and seed masking is enforced locally in all cases.
+transfers are unobserved. The integrated feature contract includes complete-window
+temporal denominators and bounded route/anomaly evidence. The engine honors its
+explicit availability flags without changing the published scoring weights;
+optional pattern columns do not automatically affect the scores. Boundary and
+seed masking is enforced locally in all cases.

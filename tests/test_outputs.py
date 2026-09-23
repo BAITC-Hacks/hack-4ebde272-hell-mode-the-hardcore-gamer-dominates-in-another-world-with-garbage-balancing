@@ -268,10 +268,11 @@ def test_empty_isolated_and_missing_peripheral_evidence():
     assert "unavailable" in unavailable and "0.55" in unavailable
 
 
-@pytest.mark.parametrize("validity_flag", ["relay_2d_ratio_valid", "relay_2d_ratio_available", "decision_relay_2d_ratio_valid"])
-def test_transit_explanation_ignores_invalid_raw_temporal_ratio(validity_flag):
+@pytest.mark.parametrize("validity_flag", ["relay_2d_valid", "relay_2d_ratio_valid", "relay_2d_ratio_available", "decision_relay_2d_ratio_valid"])
+@pytest.mark.parametrize("invalid", [False, np.nan, pd.NA])
+def test_transit_explanation_ignores_invalid_raw_temporal_ratio(validity_flag, invalid):
     row = pd.Series({"role": "transit", "depth": 2, "in_deg": 3, "out_deg": 4,
-                     "pass_through": .8, "relay_2d_ratio": .95, validity_flag: False})
+                     "pass_through": .8, "relay_2d_ratio": .95, validity_flag: invalid})
     text = evidence_for(row)
     assert "2-day timing unavailable" in text
     assert "95%" not in text
