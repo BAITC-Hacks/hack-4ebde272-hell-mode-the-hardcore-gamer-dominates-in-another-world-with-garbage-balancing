@@ -2,6 +2,11 @@
 
 Audit date: 2026-09-23. Branch: `testing`.
 
+**Historical audit:** the fixes below have since been integrated. See the
+[integrated verification report](integration-verification.md) for current
+requirement coverage, 461 passing tests, the final contract fix and remaining
+verification limits.
+
 Scope: the supplied Russian HackAlem technical brief, current source, current
 local exports, Docker configuration, documentation, and existing tests. This
 report distinguishes required submission fixes from optional scoring features.

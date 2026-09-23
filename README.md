@@ -74,6 +74,9 @@ required; implementation source hashes are recorded independently.
 
 See [DEMO.md](DEMO.md) for exact examples and the release verification record
 under `submission/` for tested commands, runtime and integration limitations.
+The latest [integrated verification report](documentation/integration-verification.md)
+records the combined branches, 461 passing tests and remaining presentation/LLM
+verification limits.
 
 ## Investigation workflow
 
