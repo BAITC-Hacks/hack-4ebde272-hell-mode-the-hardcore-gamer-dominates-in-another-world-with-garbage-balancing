@@ -1,0 +1,3 @@
+# Preserve the bytes covered by release_metadata.json on every checkout.
+*.csv -text
+*.json -text
