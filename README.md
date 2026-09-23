@@ -28,18 +28,17 @@ See [the architecture diagram](documentation/architecture.md).
 
 ## Installation
 
-Use Python 3.10+ and a virtual environment.
+Use Python 3.11+ and a virtual environment.
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-pip install streamlit pyvis
 ```
 
-`pyvis` is optional but enables directed interactive network diagrams. The optional
-AI panel additionally needs `pip install openai` and `OPENAI_API_KEY`; the core
-app and CSV pipeline do not require either.
+The requirements include Streamlit, PyVis network diagrams, and the OpenAI SDK.
+The optional AI panel needs `OPENAI_API_KEY`; the core app and CSV pipeline work
+without an API key. Network diagram assets are embedded in the page.
 
 ## Run
 
@@ -55,12 +54,47 @@ The current starter snapshot can produce the prescribed CSV skeleton with:
 python starter.py --data data --out out
 ```
 
-After the analytics team’s `main.py` integration, use the first command. Open the
+The analytics pipeline is available through `main.py` and `pipeline.py`. Open the
 analyst interface with:
 
 ```bash
 streamlit run app.py
 ```
+
+## Run with Docker Compose
+
+Docker Compose builds the Python 3.11 image, runs analytics to create the CSV
+exports, then starts the Streamlit analyst app at [http://localhost:8501](http://localhost:8501).
+The supplied Parquet data is mounted read-only and exports are stored in a named
+Docker volume.
+
+```bash
+docker compose up --build
+```
+
+To rerun analytics after changing the source data, run
+`docker compose run --rm analytics` and then restart the app with
+`docker compose up -d app`. Check service state with `docker compose ps` and logs
+with `docker compose logs -f analytics app`. Stop the services with
+`docker compose down`; keep generated exports in the named volume unless you
+explicitly remove it with `docker compose down -v`.
+
+Compose passes `OPENAI_API_KEY` and optional `OPENAI_MODEL` from the host
+environment or a local `.env` file to the app. The default model is
+`gpt-4o-mini`. Recreate the app after changing those settings. `.env` files are
+excluded from Git and the Docker image.
+
+Run the regression suite under the same Python 3.11 runtime with:
+
+```bash
+docker compose --profile test run --build --rm tests
+```
+
+For local testing, install `requirements-dev.txt` and run `python -m pytest -q`.
+The suite renders all seven pages, exercises queue filters and navigation,
+checks the full dataset export contract and large client IDs, and tests the
+assistant's graph tools with mocked API responses. Live AI responses require
+a configured API key and are not part of the offline test suite.
 
 The sidebar accepts other source/export paths, so a separate pipeline workspace
 can be inspected without copying data.
@@ -105,6 +139,11 @@ The UI expects the analytics-owned outputs below in `out/`.
 | `clusters.csv` | `cluster_id`, `n_nodes`, `n_seed`, `sum_kzt_internal`, `top_gids`, `hypothesis` | cluster review |
 | `top_nodes.csv` | `rank`, `gid`, `role`, `priority_score`, `why` | investigation queue |
 | `resilience.csv` (optional) | `scenario`, `largest_component_size`, `n_components`, `fraction_remaining` | structural concentration page |
+
+The node export includes the graph-feature layer's metrics and all weighted
+priority contributions. The queue contains every exported node; `top_nodes.csv`
+remains a separate top-50 submission file. Node cards display the exported score
+contributions without recomputing the decision formula.
 
 Extra exported features are displayed automatically when named `seed_reach`,
 `pagerank_percentile`, `betweenness_percentile`, `temporal_relay`,

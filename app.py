@@ -10,13 +10,13 @@ from __future__ import annotations
 import html
 import math
 import os
+from numbers import Real
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -38,6 +38,15 @@ class InvestigationData:
     resilience: pd.DataFrame
     output_dir: Path
     data_dir: Path
+
+
+def display_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Serialize account IDs as text so browsers cannot round 64-bit integers."""
+    result = frame.copy()
+    for name in ("gid", "src", "dst"):
+        if name in result:
+            result[name] = result[name].astype("string")
+    return result
 
 
 def first_column(frame: pd.DataFrame, *names: str) -> str | None:
@@ -86,7 +95,7 @@ def resolve_path(raw: str) -> Path:
 
 
 def read_csv_if_exists(path: Path) -> pd.DataFrame:
-    return pd.read_csv(path) if path.exists() else pd.DataFrame()
+    return pd.read_csv(path, dtype={"gid": "string", "top_gids": "string"}) if path.exists() else pd.DataFrame()
 
 
 @st.cache_data(show_spinner="Loading investigation exports…")
@@ -106,8 +115,21 @@ def load_data(output_location: str, source_location: str) -> InvestigationData:
         path = data_dir / f"{name}.parquet"
         return pd.read_parquet(path) if path.exists() else pd.DataFrame()
 
-    return InvestigationData(roles, clusters, top_nodes, parquet("edges"), parquet("nodes"),
-                             parquet("transactions"), resilience, out_dir, data_dir)
+    edges, source_nodes, transactions = parquet("edges"), parquet("nodes"), parquet("transactions")
+    for name, frame, required in (
+        ("nodes_roles.csv", roles, {"gid", "role", "priority_score"}),
+        ("clusters.csv", clusters, {"cluster_id"}),
+        ("top_nodes.csv", top_nodes, {"gid", "priority_score"}),
+        ("nodes.parquet", source_nodes, {"gid", "depth", "is_seed"}),
+        ("edges.parquet", edges, {"src", "dst", "sum_kzt", "n_tx"}),
+        ("transactions.parquet", transactions, {"src", "dst", "date", "sum_kzt"}),
+    ):
+        if not frame.empty and not required.issubset(frame.columns):
+            raise ValueError(f"{name} is missing columns: {sorted(required - set(frame.columns))}")
+        if "gid" in frame and (frame["gid"].isna().any() or frame["gid"].duplicated().any()):
+            raise ValueError(f"{name} must contain unique, non-null gids")
+    return InvestigationData(roles, clusters, top_nodes, edges, source_nodes,
+                             transactions, resilience, out_dir, data_dir)
 
 
 def merged_nodes(data: InvestigationData) -> pd.DataFrame:
@@ -148,6 +170,7 @@ def merged_nodes(data: InvestigationData) -> pd.DataFrame:
         additions = [c for c in direct.columns if c != "gid" and c not in roles.columns]
         if additions:
             roles = roles.merge(direct[["gid", *additions]], on="gid", how="left")
+            roles[additions] = roles[additions].fillna(0)
     if first_column(roles, "turnover_kzt", "turnover", "in_out_kzt") is None and {"in_kzt", "out_kzt"}.issubset(roles.columns):
         roles["turnover_kzt"] = pd.to_numeric(roles["in_kzt"], errors="coerce").fillna(0) + pd.to_numeric(roles["out_kzt"], errors="coerce").fillna(0)
     if "truncated_by_depth" not in roles and {"depth", "out_deg"}.issubset(roles.columns):
@@ -157,7 +180,7 @@ def merged_nodes(data: InvestigationData) -> pd.DataFrame:
 
 def priority_table(data: InvestigationData, nodes: pd.DataFrame) -> pd.DataFrame:
     """Build a presentation table without altering the exported ranking."""
-    table = data.top_nodes.copy() if not data.top_nodes.empty else nodes.copy()
+    table = nodes.copy() if not data.roles.empty else data.top_nodes.copy()
     if table.empty:
         return table
     gid_col = first_column(table, "gid")
@@ -176,7 +199,7 @@ def priority_table(data: InvestigationData, nodes: pd.DataFrame) -> pd.DataFrame
     table[score] = pd.to_numeric(table[score], errors="coerce").fillna(0.0)
     if score != "priority_score":
         table["priority_score"] = table[score]
-    table = table.sort_values("priority_score", ascending=False, kind="stable").reset_index(drop=True)
+    table = table.sort_values(["priority_score", "gid"], ascending=[False, True], kind="stable").reset_index(drop=True)
     if "rank" not in table:
         table.insert(0, "rank", range(1, len(table) + 1))
     return table
@@ -205,8 +228,7 @@ def queue_view(table: pd.DataFrame) -> pd.DataFrame:
 
 
 def nav_to_node(gid: int) -> None:
-    st.session_state["selected_gid"] = int(gid)
-    st.session_state["page"] = "Node card"
+    st.session_state["pending_navigation"] = {"page": "Node card", "gid": int(gid)}
 
 
 def metric_cards(data: InvestigationData, nodes: pd.DataFrame) -> None:
@@ -241,14 +263,17 @@ def metric_cards(data: InvestigationData, nodes: pd.DataFrame) -> None:
         scores = pd.to_numeric(nodes[score_col], errors="coerce").dropna()
         if not scores.empty:
             bins = pd.cut(scores, bins=min(12, max(2, scores.nunique())))
-            st.bar_chart(bins.value_counts(sort=False), height=180)
+            counts = bins.value_counts(sort=False)
+            counts.index = counts.index.astype(str)
+            st.bar_chart(counts, height=180)
 
 
 def overview_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     st.title("Money Graph · Analyst workspace")
     st.caption("Triage sampled payment flows, document evidence, and request the next data slice.")
     metric_cards(data, nodes)
-    st.warning("Scope note: this is a four-hop, outgoing expansion from 81 seeds. Scores and roles identify candidates for review; they are not findings of wrongdoing.")
+    seed_count = int(data.nodes["is_seed"].map(as_bool).sum()) if "is_seed" in data.nodes else 0
+    st.warning(f"Scope note: this is a four-hop, outgoing expansion from {seed_count} observed seeds. Scores and roles identify candidates for review; they are not findings of wrongdoing.")
     st.subheader("What to do next")
     st.markdown("1. Start in **Investigation queue**.  \n2. Open a candidate card to examine directed flow and evidence.  \n3. Use **Network explorer** for a small, legible neighborhood—not a full-network hairball.")
 
@@ -268,7 +293,7 @@ def queue_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     depths = sorted(pd.to_numeric(queue["depth"], errors="coerce").dropna().astype(int).unique().tolist())
     selected_depths = c.multiselect("Depth", depths)
     seed_filter = d.selectbox("Seed status", ["All", "Seed", "Non-seed"])
-    minimum = e.number_input("Minimum priority", min_value=0.0, max_value=float(queue["priority_score"].max() or 1), value=0.0)
+    minimum = e.number_input("Minimum priority", min_value=0.0, max_value=1.0, value=0.0)
     filtered = queue[queue["priority_score"] >= minimum]
     if selected_roles:
         filtered = filtered[filtered["role"].astype(str).isin(selected_roles)]
@@ -282,8 +307,8 @@ def queue_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     st.caption(f"{len(filtered):,} candidates shown · sorted by exported priority score")
     display = filtered.copy()
     display["turnover_kzt"] = display["turnover_kzt"].map(lambda x: fmt_kzt(x) if x != MISSING else MISSING)
-    st.dataframe(display[["rank", "gid", "role", "priority_score", "cluster", "seed_reach", "turnover_kzt", "why"]],
-                 use_container_width=True, hide_index=True, height=440)
+    st.dataframe(display_frame(display[["rank", "gid", "role", "priority_score", "cluster", "seed_reach", "turnover_kzt", "why"]]),
+                 width="stretch", hide_index=True, height=440)
     if filtered.empty:
         return
     option_map = {f"#{row.rank} · gid {row.gid} · {row.role}": int(row.gid) for row in filtered.itertuples()}
@@ -307,9 +332,14 @@ def percentile(frame: pd.DataFrame, col: str, gid: int) -> str:
 
 def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
     st.title("Node card")
-    gids = sorted(nodes["gid"].astype(int).unique().tolist()) if not nodes.empty else []
+    if nodes.empty:
+        st.info("No nodes are loaded. Check the source and export directories.")
+        return
+    gids = sorted(nodes["gid"].astype(int).unique().tolist())
     current = st.session_state.get("selected_gid", gids[0] if gids else None)
-    entered = st.text_input("Search arbitrary gid", value=str(current) if current is not None else "", placeholder="e.g. 123456")
+    if "node_gid_input" not in st.session_state:
+        st.session_state["node_gid_input"] = str(current) if current is not None else ""
+    entered = st.text_input("Search arbitrary gid", key="node_gid_input", placeholder="e.g. 123456")
     try:
         gid = int(entered)
     except ValueError:
@@ -325,28 +355,30 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
     cluster = value(row, "cluster_id", "cluster", default=MISSING)
     depth = value(row, "depth", default=MISSING)
     is_seed = as_bool(value(row, "is_seed", "seed", default=False))
-    boundary = depth == 4 or bool(value(row, "truncated_by_depth", default=False))
+    boundary = depth == 4 or as_bool(value(row, "boundary_censored", "truncated_by_depth", default=False))
     st.subheader(f"gid {gid:,} · {role}")
     top = st.columns(6)
-    top[0].metric("Role confidence", fmt_metric(value(row, "role_score", "role_confidence")))
+    top[0].metric("Role strength", fmt_metric(value(row, "role_score", "role_confidence")))
     top[1].metric("Priority", fmt_metric(value(row, "priority_score", "priority")))
     top[2].metric("Cluster", fmt_metric(cluster))
     top[3].metric("Seed", "Yes" if is_seed else "No")
     top[4].metric("Boundary", "Hop-4" if boundary else "Within sample")
     top[5].metric("Depth", fmt_metric(depth, 0))
-    if depth == 4:
+    if boundary:
         st.warning("Outgoing transfers beyond hop 4 are not present in the supplied sample. Do not interpret out_deg=0 as confirmed retention.")
+    if is_seed:
+        st.info("Seed inflows are incomplete. Flow ratios that depend on them are unavailable.")
     st.subheader("Flow and graph evidence")
     fields = [
         ("In / out degree", value(row, "in_deg"), value(row, "out_deg"), "count"),
         ("In / out turnover", value(row, "in_kzt"), value(row, "out_kzt"), "kzt"),
         ("In / out transactions", value(row, "in_tx"), value(row, "out_tx"), "count"),
         ("Seed reach", value(row, "seed_reach", "n_seed_reach", "seed_reach_count"), None, "count"),
-        ("PageRank percentile", value(row, "pagerank_percentile"), None, "raw"),
-        ("Betweenness percentile", value(row, "betweenness_percentile"), None, "raw"),
-        ("Temporal relay", value(row, "temporal_relay", "temporal_relay_score"), None, "raw"),
+        ("PageRank percentile", value(row, "pagerank_percentile", "pagerank_pct"), None, "raw"),
+        ("Betweenness percentile", value(row, "betweenness_percentile", "betweenness_pct"), None, "raw"),
+        ("Temporal relay", value(row, "relay_2d_ratio", "temporal_relay", "temporal_relay_score"), None, "raw"),
         ("Cross-cluster degree", value(row, "cross_cluster_degree"), None, "count"),
-        ("Anomaly score", value(row, "anomaly_score"), None, "raw"),
+        ("Anomaly score", value(row, "peer_anomaly_score", "anomaly_score"), None, "raw"),
     ]
     columns = st.columns(3)
     for index, (label, left, right, kind) in enumerate(fields):
@@ -354,6 +386,8 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
             left = percentile(nodes, "pagerank", gid) if "pagerank" in nodes else MISSING
         if label == "Betweenness percentile" and left is None:
             left = percentile(nodes, "betweenness", gid) if "betweenness" in nodes else MISSING
+        if label.endswith("percentile") and isinstance(left, Real):
+            left = f"{left * 100:.1f}th percentile"
         shown = f"{fmt_kzt(left)} / {fmt_kzt(right)}" if kind == "kzt" and right is not None else \
             f"{fmt_metric(left, 0)} / {fmt_metric(right, 0)}" if right is not None else fmt_metric(left)
         columns[index % 3].metric(label, shown)
@@ -365,7 +399,16 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
         st.subheader("Investigation-priority explanation")
         detail = value(row, "priority_explanation", "priority_decomposition", "why", "evidence",
                        default="No decomposition was exported; the UI does not reconstruct the priority formula.")
-        st.write(detail)
+        contributions = [name for name in nodes.columns if name.startswith("priority_") and name.endswith("_contribution")]
+        if contributions:
+            breakdown = pd.DataFrame({
+                "Signal": [name.removeprefix("priority_").removesuffix("_contribution").replace("_", " ") for name in contributions],
+                "Score contribution": [row[name] for name in contributions],
+            })
+            st.dataframe(breakdown, hide_index=True, width="stretch")
+            st.caption("Exported contributions sum to the displayed priority score.")
+        else:
+            st.write(detail)
     st.subheader("Suggested next data request")
     requests = []
     if depth == 4:
@@ -388,10 +431,10 @@ def render_counterparties(data: InvestigationData, gid: int) -> None:
     a, b = st.columns(2)
     with a:
         st.caption("Incoming")
-        st.dataframe(incoming, hide_index=True, use_container_width=True)
+        st.dataframe(display_frame(incoming), hide_index=True, width="stretch")
     with b:
         st.caption("Outgoing")
-        st.dataframe(outgoing, hide_index=True, use_container_width=True)
+        st.dataframe(display_frame(outgoing), hide_index=True, width="stretch")
 
 
 def neighborhood(edges: pd.DataFrame, gid: int, hops: int) -> pd.DataFrame:
@@ -414,9 +457,9 @@ def pyvis_html(edges: pd.DataFrame, nodes: pd.DataFrame, focus_gid: int | None =
         return None
     selected = set(edges["src"]) | set(edges["dst"])
     attributes = nodes[nodes["gid"].isin(selected)].set_index("gid", drop=False)
-    graph = Network(height="650px", width="100%", directed=True, bgcolor="#ffffff", font_color="#172033")
+    graph = Network(height="650px", width="100%", directed=True, bgcolor="#ffffff", font_color="#172033", cdn_resources="in_line")
     graph.set_options("""{"physics":{"stabilization":{"iterations":150},"barnesHut":{"gravitationalConstant":-5000}},"edges":{"smooth":false,"arrows":{"to":{"enabled":true,"scaleFactor":0.7}}}}""")
-    for gid in selected:
+    for gid in sorted(selected):
         row = attributes.loc[gid] if gid in attributes.index else pd.Series(dtype=object)
         role = str(value(row, "role", default="unassigned")).lower()
         seed = as_bool(value(row, "is_seed", "seed", default=False))
@@ -424,12 +467,12 @@ def pyvis_html(edges: pd.DataFrame, nodes: pd.DataFrame, focus_gid: int | None =
         label = str(gid) + (" ★" if seed else "")
         title = "<br>".join([f"<b>gid {html.escape(str(gid))}</b>", f"role: {html.escape(role)}",
                                f"priority: {priority:.3f}", f"seed: {seed}"])
-        graph.add_node(int(gid), label=label, title=title, color={"background": ROLE_COLORS.get(role, "#94a3b8"),
+        graph.add_node(str(gid), label=label, title=title, color={"background": ROLE_COLORS.get(role, "#94a3b8"),
                        "border": "#111827" if seed else "#ffffff"}, borderWidth=4 if seed else 1,
                        size=12 + min(24, priority * 18) + (7 if gid == focus_gid else 0))
     for edge in edges.itertuples(index=False):
         amount, count = as_number(getattr(edge, "sum_kzt", 0)), getattr(edge, "n_tx", "?")
-        graph.add_edge(int(edge.src), int(edge.dst), width=max(1, min(10, math.log1p(amount) / 2)),
+        graph.add_edge(str(edge.src), str(edge.dst), width=max(1, min(10, math.log1p(amount) / 2)),
                        title=f"{amount:,.0f} KZT · {count} transaction(s)")
     return graph.generate_html(notebook=False)
 
@@ -440,11 +483,13 @@ def network_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     if data.edges.empty:
         st.warning("Source `edges.parquet` is required for network exploration.")
         return
-    mode = st.radio("View", ["Selected gid · 1 hop", "Selected gid · 2 hops", "Selected cluster", "Full network (optional)"], horizontal=True)
+    mode = st.radio("View", ["Selected gid · 1 hop", "Selected gid · 2 hops", "Selected cluster", "Full network (optional)"], horizontal=True, key="network_view")
     gid = st.session_state.get("selected_gid", int(nodes["gid"].iloc[0]) if not nodes.empty else None)
     graph_edges = pd.DataFrame()
     if mode.startswith("Selected gid"):
-        entered = st.text_input("Selected gid", value=str(gid) if gid is not None else "")
+        if "network_gid_input" not in st.session_state:
+            st.session_state["network_gid_input"] = str(gid) if gid is not None else ""
+        entered = st.text_input("Selected gid", key="network_gid_input")
         try:
             gid = int(entered)
         except ValueError:
@@ -460,8 +505,12 @@ def network_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
             st.warning("Cluster labels have not been exported yet.")
             return
         choices = sorted(nodes[cluster_col].dropna().astype(str).unique())
-        initial = st.session_state.pop("network_cluster", choices[0] if choices else None)
-        selected = st.selectbox("Cluster", choices, index=choices.index(initial) if initial in choices else 0)
+        if not choices:
+            st.info("No clusters are available in the loaded data.")
+            return
+        if st.session_state.get("network_cluster_selection") not in choices:
+            st.session_state["network_cluster_selection"] = choices[0]
+        selected = st.selectbox("Cluster", choices, key="network_cluster_selection")
         members = set(nodes.loc[nodes[cluster_col].astype(str) == selected, "gid"])
         graph_edges = data.edges[data.edges["src"].isin(members) & data.edges["dst"].isin(members)]
         gid = None
@@ -478,7 +527,7 @@ def network_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     if html_graph is None:
         st.error("Network view needs the optional `pyvis` package: `pip install pyvis`.")
         return
-    components.html(html_graph, height=670, scrolling=True)
+    st.iframe(html_graph, height=670)
 
 
 def cluster_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
@@ -488,10 +537,13 @@ def cluster_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
         st.warning("No cluster labels are available. Run the clustering stage first.")
         return
     choices = sorted(nodes[cluster_col].dropna().astype(str).unique())
+    if not choices:
+        st.info("No clusters are available in the loaded data.")
+        return
     selected = st.selectbox("Cluster", choices)
     members = nodes[nodes[cluster_col].astype(str) == selected]
     summary = data.clusters[data.clusters["cluster_id"].astype(str) == selected] if "cluster_id" in data.clusters else pd.DataFrame()
-    internal = data.edges[data.edges["src"].isin(members["gid"]) & data.edges["dst"].isin(members["gid"])]
+    internal = data.edges[data.edges["src"].isin(members["gid"]) & data.edges["dst"].isin(members["gid"])] if not data.edges.empty else pd.DataFrame()
     seed_col, role_col = first_column(members, "is_seed", "seed"), first_column(members, "role")
     cards = st.columns(4)
     cards[0].metric("Nodes", f"{len(members):,}")
@@ -505,7 +557,7 @@ def cluster_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     with left:
         st.subheader("Top gids")
         score = first_column(members, "priority_score", "priority")
-        st.dataframe(members.sort_values(score, ascending=False).head(15) if score else members.head(15), hide_index=True, use_container_width=True)
+        st.dataframe(display_frame(members.sort_values(score, ascending=False).head(15) if score else members.head(15)), hide_index=True, width="stretch")
     with right:
         st.subheader("Role composition")
         if role_col:
@@ -513,8 +565,7 @@ def cluster_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
         else:
             st.info("Roles are not exported.")
     if st.button("Open this cluster in Network explorer"):
-        st.session_state["network_cluster"] = selected
-        st.session_state["page"] = "Network explorer"
+        st.session_state["pending_navigation"] = {"page": "Network explorer", "cluster": selected}
         st.rerun()
 
 
@@ -526,27 +577,27 @@ def resilience_page(data: InvestigationData) -> None:
         st.code("scenario,largest_component_size,n_components,fraction_remaining\nbaseline,...\nremove_top_1,...")
         return
     frame = data.resilience.copy()
-    scenario = first_column(frame, "scenario", "removal", "step")
-    largest = first_column(frame, "largest_component_size", "largest_component")
-    components_col = first_column(frame, "n_components", "number_of_components", "components")
-    fraction = first_column(frame, "fraction_remaining", "remaining_fraction")
-    st.dataframe(frame, use_container_width=True, hide_index=True)
+    scenario = first_column(frame, "scenario", "removed_top_n", "removal", "step")
+    largest = first_column(frame, "largest_component_size", "largest_weak_component_size", "largest_component")
+    components_col = first_column(frame, "n_components", "n_weak_components", "number_of_components", "components")
+    fraction = first_column(frame, "fraction_remaining", "fraction_baseline_largest", "remaining_fraction")
+    st.dataframe(frame, width="stretch", hide_index=True)
     if scenario and largest:
         st.subheader("Largest component after ranked removals")
-        st.bar_chart(frame.set_index(scenario)[largest])
+        st.bar_chart(frame.set_index(scenario)[largest], sort=False)
     if scenario and components_col:
         st.subheader("Number of components")
-        st.bar_chart(frame.set_index(scenario)[components_col])
+        st.bar_chart(frame.set_index(scenario)[components_col], sort=False)
     if scenario and fraction:
-        st.subheader("Fraction remaining")
-        st.bar_chart(frame.set_index(scenario)[fraction])
+        st.subheader("Largest component as a fraction of its baseline size")
+        st.bar_chart(frame.set_index(scenario)[fraction], sort=False)
 
 
 def ai_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     st.title("Optional AI analyst")
     st.caption("Available only with `OPENAI_API_KEY`. It can explain deterministic tool results; it cannot create graph facts or make guilt claims.")
     if not os.getenv("OPENAI_API_KEY"):
-        st.info("Core investigation features work without an API key. Set `OPENAI_API_KEY` and install `openai` to enable this optional panel.")
+        st.info("Core investigation features work without an API key. Set `OPENAI_API_KEY` to enable this optional panel.")
         return
     question = st.text_area("Ask about exported evidence", placeholder="Compare gid 101 and gid 202, then explain what to review next.")
     if st.button("Ask grounded assistant", type="primary", disabled=not question.strip()):
@@ -562,20 +613,28 @@ def ai_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
 def main() -> None:
     st.set_page_config(page_title="Money Graph", page_icon="◌", layout="wide")
     st.sidebar.title("Money Graph")
-    output_location = st.sidebar.text_input("Exports directory", "out")
-    source_location = st.sidebar.text_input("Source data directory", "data")
+    output_location = st.sidebar.text_input("Exports directory", os.getenv("MONEY_GRAPH_OUTPUT_DIR", "out"))
+    source_location = st.sidebar.text_input("Source data directory", os.getenv("MONEY_GRAPH_DATA_DIR", "data"))
     if st.sidebar.button("Reload data"):
         load_data.clear()
     pages = ["Overview", "Investigation queue", "Node card", "Network explorer", "Cluster review", "Resilience", "AI analyst"]
-    current_page = st.session_state.get("page", "Overview")
-    page = st.sidebar.radio("Workspace", pages, index=pages.index(current_page) if current_page in pages else 0)
-    st.session_state["page"] = page
+    navigation = st.session_state.pop("pending_navigation", {})
+    if navigation:
+        st.session_state["page"] = navigation["page"]
+        if "gid" in navigation:
+            st.session_state["selected_gid"] = navigation["gid"]
+            st.session_state["node_gid_input"] = str(navigation["gid"])
+            st.session_state["network_gid_input"] = str(navigation["gid"])
+        if "cluster" in navigation:
+            st.session_state["network_view"] = "Selected cluster"
+            st.session_state["network_cluster_selection"] = navigation["cluster"]
+    page = st.sidebar.radio("Workspace", pages, key="page")
     try:
         data = load_data(output_location, source_location)
+        nodes = merged_nodes(data)
     except Exception as exc:
         st.error(f"Could not load the supplied files: {exc}")
         st.stop()
-    nodes = merged_nodes(data)
     if page == "Overview":
         overview_page(data, nodes)
     elif page == "Investigation queue":

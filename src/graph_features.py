@@ -41,7 +41,7 @@ def percentile_rank(values: pd.Series) -> pd.Series:
     return numeric.rank(method="average", pct=True)
 
 
-def _weighted_pagerank(graph: nx.DiGraph, *, alpha: float = 0.85, max_iter: int = 100, tol: float = 1e-6) -> dict:
+def weighted_pagerank(graph: nx.DiGraph, *, alpha: float = 0.85, max_iter: int = 100, tol: float = 1e-6) -> dict:
     """Compute weighted PageRank with NumPy-free-of-SciPy graph iteration."""
     nodes = list(graph.nodes)
     count = len(nodes)
@@ -139,7 +139,7 @@ def build_features(nodes: pd.DataFrame, edges: pd.DataFrame, transactions: pd.Da
     features["total_kzt"] = features["in_kzt"] + features["out_kzt"]
     features["total_tx"] = features["in_tx"] + features["out_tx"]
 
-    pagerank = _weighted_pagerank(graph)
+    pagerank = weighted_pagerank(graph)
     features["pagerank"] = pd.Series(pagerank).reindex(gids).fillna(0.0)
     betweenness = nx.betweenness_centrality(graph, normalized=True, weight="distance")
     features["betweenness"] = pd.Series(betweenness).reindex(gids).fillna(0.0)

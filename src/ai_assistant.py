@@ -8,6 +8,9 @@ other than the deterministic functions in :class:`GraphInvestigationTools`.
 from __future__ import annotations
 
 import json
+import math
+import os
+from collections import deque
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -38,9 +41,11 @@ def _json_safe(value: Any) -> Any:
         return [_json_safe(v) for v in value]
     if pd.isna(value) if not isinstance(value, (list, dict, tuple)) else False:
         return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
     if hasattr(value, "item"):
         try:
-            return value.item()
+            return _json_safe(value.item())
         except ValueError:
             pass
     if hasattr(value, "isoformat"):
@@ -68,15 +73,18 @@ class GraphInvestigationTools:
             self.edges["dst"] = pd.to_numeric(self.edges["dst"], errors="coerce")
             self.edges = self.edges.dropna(subset=["src", "dst"])
             self.edges[["src", "dst"]] = self.edges[["src", "dst"]].astype("int64")
-        self.graph = nx.from_pandas_edgelist(
-            self.edges, "src", "dst", edge_attr=True, create_using=nx.DiGraph
-        )
+        if self.edges.empty:
+            self.edges = pd.DataFrame(columns=["src", "dst", "sum_kzt", "n_tx"])
+        self.graph = nx.DiGraph()
+        self.graph.add_nodes_from(self.nodes["gid"])
+        for row in self.edges.to_dict("records"):
+            self.graph.add_edge(row["src"], row["dst"], **{k: v for k, v in row.items() if k not in ("src", "dst")})
 
     def _record(self, frame: pd.DataFrame, gid: int) -> dict[str, Any] | None:
         row = frame.loc[frame["gid"] == int(gid)]
         if row.empty:
             return None
-        return _json_safe(row.iloc[0].dropna().to_dict())
+        return _json_safe(row.to_dict("records")[0])
 
     def get_node(self, gid: int) -> dict[str, Any]:
         record = self._record(self.nodes, gid)
@@ -86,14 +94,12 @@ class GraphInvestigationTools:
         return record
 
     def get_top_nodes(self, limit: int = 20, role: str | None = None) -> list[dict[str, Any]]:
-        frame = self.top_nodes.copy()
-        if frame.empty:
-            frame = self.nodes.copy()
+        frame = self.nodes.copy() if "priority_score" in self.nodes else self.top_nodes.copy()
         if role and "role" in frame:
             frame = frame[frame["role"].astype(str).str.lower() == role.lower()]
         score = "priority_score" if "priority_score" in frame else "rank"
         if score in frame:
-            frame = frame.sort_values(score, ascending=(score == "rank"))
+            frame = frame.sort_values([score, "gid"], ascending=[score == "rank", True], kind="stable")
         return _json_safe(frame.head(max(1, min(int(limit), 100))).to_dict("records"))
 
     def get_cluster(self, cluster_id: str | int) -> dict[str, Any]:
@@ -116,6 +122,7 @@ class GraphInvestigationTools:
 
     def get_counterparties(self, gid: int, limit: int = 25) -> dict[str, Any]:
         gid = int(gid)
+        limit = max(1, min(int(limit), 100))
         inbound = self.edges[self.edges["dst"] == gid]
         outbound = self.edges[self.edges["src"] == gid]
         fields = [c for c in ["src", "dst", "sum_kzt", "n_tx", "depth"] if c in self.edges]
@@ -127,6 +134,7 @@ class GraphInvestigationTools:
 
     def find_common_descendants(self, gids: list[int], max_hops: int = 4) -> dict[str, Any]:
         gids = [int(g) for g in gids]
+        max_hops = max(1, min(int(max_hops), 8))
         if not gids:
             return {"gids": [], "common_descendants": []}
         descendant_sets = []
@@ -143,16 +151,26 @@ class GraphInvestigationTools:
         src, dst = int(src), int(dst)
         if src not in self.graph or dst not in self.graph:
             return {"found": False, "reason": "source or destination is absent from the supplied graph"}
-        paths = []
-        try:
-            for path in nx.all_simple_paths(self.graph, src, dst, cutoff=max(1, min(max_hops, 10))):
+        max_hops, limit = max(1, min(int(max_hops), 10)), max(1, min(int(limit), 25))
+        # Bounded BFS prevents an exponential simple-path scan from freezing the UI.
+        paths, pending = [], deque([[src]])
+        examined, budget = 0, 20_000
+        while pending and len(paths) < limit and examined < budget:
+            path = pending.popleft()
+            if path[-1] == dst:
                 paths.append(path)
-                if len(paths) >= max(1, min(limit, 25)):
+                continue
+            if len(path) - 1 >= max_hops:
+                continue
+            for neighbor in sorted(self.graph.successors(path[-1])):
+                examined += 1
+                if neighbor not in path:
+                    pending.append([*path, neighbor])
+                if examined >= budget:
                     break
-        except nx.NetworkXNoPath:
-            pass
         return {"found": bool(paths), "src": src, "dst": dst, "paths": paths,
-                "note": "Paths are only within the supplied four-hop sample."}
+                "truncated": bool(pending), "max_hops": max_hops,
+                "note": "Paths are only within the supplied four-hop sample; search is bounded."}
 
     def compare_nodes(self, gid1: int, gid2: int) -> dict[str, Any]:
         return {"node_1": self.get_node(int(gid1)), "node_2": self.get_node(int(gid2))}
@@ -169,7 +187,7 @@ TOOL_SPECS = [
 ]
 
 
-def answer_question(question: str, tools: GraphInvestigationTools, model: str = "gpt-4o-mini") -> str:
+def answer_question(question: str, tools: GraphInvestigationTools, model: str | None = None) -> str:
     """Use tool calling; model output is permitted only after deterministic calls.
 
     The OpenAI import is deliberately local so missing optional dependencies never
@@ -180,7 +198,8 @@ def answer_question(question: str, tools: GraphInvestigationTools, model: str = 
     except ImportError as exc:
         raise RuntimeError("Install the optional `openai` package to use AI Analyst.") from exc
 
-    client = OpenAI()
+    client = OpenAI(timeout=30.0, max_retries=1)
+    model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": question},
@@ -191,18 +210,22 @@ def answer_question(question: str, tools: GraphInvestigationTools, model: str = 
             "get_counterparties", "find_paths", "compare_nodes"
         )
     }
+    grounded = False
     for _ in range(6):
-        response = client.chat.completions.create(model=model, messages=messages, tools=TOOL_SPECS, tool_choice="auto")
+        response = client.chat.completions.create(model=model, messages=messages, tools=TOOL_SPECS, tool_choice="auto" if grounded else "required")
         message = response.choices[0].message
         messages.append(message.model_dump(exclude_none=True))
         if not message.tool_calls:
+            if not grounded:
+                return "No verified tool result was returned. Please ask about a specific node or cluster."
             return message.content or "No grounded response was returned."
         for call in message.tool_calls:
             try:
                 args = json.loads(call.function.arguments)
                 result = functions[call.function.name](**args)
+                grounded = True
             except Exception as exc:  # tool errors are context, not hidden facts
                 result = {"error": str(exc)}
             messages.append({"role": "tool", "tool_call_id": call.id,
-                             "content": json.dumps(_json_safe(result), ensure_ascii=False)})
+                             "content": json.dumps(_json_safe(result), ensure_ascii=False, allow_nan=False)})
     return "I reached the tool-call limit before completing a grounded response. Please narrow the question."

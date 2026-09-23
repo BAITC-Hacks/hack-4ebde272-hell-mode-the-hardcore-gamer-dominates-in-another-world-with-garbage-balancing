@@ -1,0 +1,45 @@
+services:
+  analytics:
+    build:
+      context: .
+      target: runtime
+    image: money-graph:local
+    command: ["python", "pipeline.py", "--data", "/app/data", "--out", "/app/out"]
+    volumes:
+      - ./data:/app/data:ro
+      - exports:/app/out
+    restart: "no"
+
+  app:
+    image: money-graph:local
+    command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+    depends_on:
+      analytics:
+        condition: service_completed_successfully
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data:ro
+      - exports:/app/out:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      target: test
+    image: money-graph:test
+    volumes:
+      - ./data:/app/data:ro
+
+volumes:
+  exports:

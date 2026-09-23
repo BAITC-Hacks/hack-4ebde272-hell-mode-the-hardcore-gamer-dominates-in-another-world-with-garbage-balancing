@@ -46,7 +46,8 @@ def cluster_summaries(features: pd.DataFrame, graph, nodes: pd.DataFrame) -> pd.
 def write_exports(features: pd.DataFrame, clusters: pd.DataFrame, out_dir: str | Path) -> dict[str, int]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    nodes = features[NODE_COLUMNS].copy()
+    columns = NODE_COLUMNS + [name for name in features.columns if name not in NODE_COLUMNS]
+    nodes = features[columns].copy()
     nodes.to_csv(out / "nodes_roles.csv", index=False)
     clusters[CLUSTER_COLUMNS].to_csv(out / "clusters.csv", index=False)
     top = features.sort_values(["priority_score", "gid"], ascending=[False, True], kind="mergesort").head(min(50, len(features))).copy()
