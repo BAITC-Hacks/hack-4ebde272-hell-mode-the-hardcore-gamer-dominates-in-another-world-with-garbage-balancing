@@ -13,6 +13,9 @@ repository root:
 
 ```bash
 git clone https://github.com/BAITC-Hacks/hack-4ebde272-hell-mode-the-hardcore-gamer-dominates-in-another-world-with-garbage-balancing.git
+
+cd hack-4ebde272-hell-mode-the-hardcore-gamer-dominates-in-another-world-with-garbage-balancing/
+
 docker compose up --build -d
 ```
 
