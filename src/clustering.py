@@ -1,56 +1,117 @@
-"""Deterministic community assignment for the AML investigation graph."""
+"""Deterministic Louvain communities and directed cross-community measurements."""
 from __future__ import annotations
+
+from collections import defaultdict
+import math
+from numbers import Integral
 
 import networkx as nx
 import pandas as pd
 
 
+def _int64_gid(value) -> int:
+    """Preserve identifiers exactly; a float cannot prove an exact int64 gid."""
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise ValueError("Every gid must be an integer, never a float or boolean")
+    gid = int(value)
+    if not -(2**63) <= gid < 2**63:
+        raise ValueError("Every gid must fit signed int64")
+    return gid
+
+
 def cluster_graph(graph: nx.DiGraph, nodes: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Assign stable Louvain clusters and return cross-cluster directed degrees.
+    """Return gid-keyed cluster features and cluster membership metadata.
 
-    Only this projection is undirected. The input graph remains directed and is
-    used for all subsequent measurements.
+    Only the Louvain projection is undirected. Reciprocal amounts are summed
+    with ``math.fsum`` after canonical numeric ordering of nodes and edges.
+    Missing graph nodes are inserted into the projection as supplied isolates.
+    The input graph is never mutated. Cluster ids sort by decreasing seed count,
+    decreasing directed internal turnover, then the smallest numeric gid.
+
+    ``internal_out_kzt`` is each node's observed outgoing amount to members of
+    its own cluster; summing it reconciles the cluster turnover export.
     """
+    if not graph.is_directed():
+        raise ValueError("Community analysis requires a directed source graph")
+    supplied_gids = [_int64_gid(gid) for gid in nodes["gid"]]
+    if len(set(supplied_gids)) != len(supplied_gids):
+        raise ValueError("Supplied node gids must be unique")
+    known_gids = set(supplied_gids)
+    graph_gids = {_int64_gid(gid) for gid in graph.nodes}
+    if not graph_gids.issubset(known_gids):
+        raise ValueError("The source graph contains gids absent from supplied nodes")
+
+    # Aggregate parallel directed edges as well as reciprocal projection edges
+    # in canonical order, so input row permutations cannot alter float sums.
+    directed_amounts = defaultdict(list)
+    for source, target, data in graph.edges(data=True):
+        amount = float(data.get("sum_kzt", 0.0))
+        if not math.isfinite(amount) or amount < 0:
+            raise ValueError("Graph sum_kzt weights must be finite and nonnegative")
+        directed_amounts[(_int64_gid(source), _int64_gid(target))].append(amount)
+    directed_edges = [
+        (source, target, math.fsum(sorted(amounts)))
+        for (source, target), amounts in sorted(directed_amounts.items())
+    ]
+    projection_amounts = defaultdict(list)
+    for source, target, amount in directed_edges:
+        projection_amounts[(min(source, target), max(source, target))].append(amount)
     ug = nx.Graph()
-    ug.add_nodes_from(graph.nodes)
-    for src, dst, data in graph.edges(data=True):
-        w = float(data.get("sum_kzt", 0.0))
-        if ug.has_edge(src, dst):
-            ug[src][dst]["sum_kzt"] += w
-        else:
-            ug.add_edge(src, dst, sum_kzt=w)
+    ug.add_nodes_from(sorted(known_gids))
+    for (source, target), amounts in sorted(projection_amounts.items()):
+        ug.add_edge(source, target, sum_kzt=math.fsum(sorted(amounts)))
 
-    communities = list(nx.community.louvain_communities(
-        ug, weight="sum_kzt", resolution=1.0, seed=42
-    ))
-    seed_set = set(nodes.loc[nodes["is_seed"].fillna(False).astype(bool), "gid"])
-
+    # Louvain's modularity denominator is zero for empty/zero-turnover graphs.
+    # With no weighted community evidence, retain each supplied node separately.
+    if not directed_edges or math.fsum(edge[2] for edge in directed_edges) == 0:
+        communities = [{gid} for gid in sorted(known_gids)]
+    else:
+        communities = list(nx.community.louvain_communities(
+            ug, weight="sum_kzt", resolution=1.0, seed=42
+        ))
+    seed_flags = nodes.get("is_seed", pd.Series(False, index=nodes.index))
+    seed_set = set(nodes.loc[seed_flags.fillna(False).astype(bool), "gid"])
     raw_owner = {gid: i for i, community in enumerate(communities) for gid in community}
-    turnovers = [0.0] * len(communities)
-    for src, dst, data in graph.edges(data=True):
-        owner = raw_owner.get(src)
-        if owner is not None and owner == raw_owner.get(dst):
-            turnovers[owner] += float(data.get("sum_kzt", 0.0))
-    communities = sorted(communities, key=lambda c: (-len(c & seed_set),
-                            -turnovers[raw_owner[next(iter(c))]],
-                            min((str(g) for g in c), default="")))
+    internal_amounts = defaultdict(list)
+    for source, target, amount in directed_edges:
+        if raw_owner[source] == raw_owner[target]:
+            internal_amounts[raw_owner[source]].append(amount)
+    turnovers = {
+        i: math.fsum(internal_amounts[i]) for i in range(len(communities))
+    }
+    communities.sort(key=lambda members: (
+        -len(members & seed_set),
+        -turnovers[raw_owner[min(members)]],
+        min(members),
+    ))
     cluster_of = {gid: i for i, community in enumerate(communities) for gid in community}
-    # Include any supplied node absent from the graph, preserving the one-row-per-node contract.
-    for gid in nodes["gid"]:
-        if gid not in cluster_of:
-            cluster_of[gid] = len(communities)
-            communities.append({gid})
+    cross_in = dict.fromkeys(known_gids, 0)
+    cross_out = dict.fromkeys(known_gids, 0)
+    adjacent_clusters = {gid: set() for gid in known_gids}
+    internal_out = defaultdict(list)
+    for source, target, amount in directed_edges:
+        if cluster_of[source] != cluster_of[target]:
+            cross_out[source] += 1
+            cross_in[target] += 1
+            adjacent_clusters[source].add(cluster_of[target])
+            adjacent_clusters[target].add(cluster_of[source])
+        else:
+            internal_out[source].append(amount)
 
-    result = nodes[["gid"]].copy()
-    result["cluster_id"] = result["gid"].map(cluster_of).astype(int)
-    cross_in = {gid: 0 for gid in cluster_of}
-    cross_out = {gid: 0 for gid in cluster_of}
-    for src, dst in graph.edges:
-        if cluster_of.get(src) != cluster_of.get(dst):
-            cross_out[src] = cross_out.get(src, 0) + 1
-            cross_in[dst] = cross_in.get(dst, 0) + 1
-    result["cross_cluster_in_deg"] = result.gid.map(cross_in).fillna(0).astype(int)
-    result["cross_cluster_out_deg"] = result.gid.map(cross_out).fillna(0).astype(int)
+    # Output order follows the supplied node table, independently of the
+    # canonical order required inside the randomized clustering algorithm.
+    result = pd.DataFrame({"gid": pd.Series(supplied_gids, dtype="int64")})
+    result["cluster_id"] = result["gid"].map(cluster_of).astype("int64")
+    result["cross_cluster_in_deg"] = result["gid"].map(cross_in).astype("int64")
+    result["cross_cluster_out_deg"] = result["gid"].map(cross_out).astype("int64")
     result["cross_cluster_degree"] = result["cross_cluster_in_deg"] + result["cross_cluster_out_deg"]
-    return result, pd.DataFrame({"cluster_id": range(len(communities)),
-                                 "gids": [sorted(c, key=str) for c in communities]})
+    result["cross_cluster_count"] = result["gid"].map(
+        {gid: len(clusters) for gid, clusters in adjacent_clusters.items()}
+    ).astype("int64")
+    result["internal_out_kzt"] = result["gid"].map(
+        {gid: math.fsum(internal_out[gid]) for gid in known_gids}
+    ).astype(float)
+    return result, pd.DataFrame({
+        "cluster_id": pd.Series(range(len(communities)), dtype="int64"),
+        "gids": [sorted(community) for community in communities],
+    })
