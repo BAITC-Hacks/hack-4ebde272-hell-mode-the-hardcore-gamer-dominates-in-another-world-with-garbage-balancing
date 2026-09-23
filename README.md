@@ -109,7 +109,8 @@ as a sampling state, not proof of inactivity outside the sample.
   confirmed terminal recipients.
 - Transactions have dates, not intraday timestamps. Same-day overlap does not
   establish ordering or tracing of the same money. July-end relay windows lack
-  subsequent dates; current feature limitations must accompany interpretation.
+  subsequent dates: July 30–31 incoming dates are excluded from the two-day
+  relay denominator, and unavailable seed/boundary ratios remain missing.
 - SCC/cycle membership is structural reachability, not a dated return of funds.
   Missing external-bank counterparties, earlier/later activity and opening
   balances limit all conclusions.
@@ -163,18 +164,34 @@ authoritative even if feature files carry duplicate decision columns.
 `fraction_baseline_largest` is largest weak-component size divided by its
 baseline value, not the fraction of all accounts remaining.
 
-Exact auxiliary schema for this integrated baseline (69 columns; nullable floats
-represent unavailable evidence). These are the actual Parquet columns, grouped
-by storage type:
+The integrated run contains 180 auxiliary columns, listed exactly below. This
+is a recorded schema, not a fixed column-count acceptance target: new optional
+features may be additive. Nullable floats/dates represent unavailable evidence;
+validity flags and the [feature contract](documentation/feature-contract.md)
+define when a number can be interpreted. The [decision contract](documentation/decision-rules.md)
+defines candidate diagnostics and contribution semantics.
 
-| Type | Columns |
+<details>
+<summary>Exact node_features.parquet columns and loaded pandas types</summary>
+
+| Type / group | Columns |
 |---|---|
-| int64 | `gid, depth, in_deg, out_deg, in_tx, out_tx, total_tx, seed_reach_count, scc_id, scc_size, reciprocal_relationship_count, active_days, max_in_senders_day, cluster_id, cross_cluster_in_deg, cross_cluster_out_deg, cross_cluster_degree` |
-| bool | `is_seed, boundary_censored, in_cycle, truncated_by_depth` |
-| float64 — observed metrics | `in_kzt, out_kzt, total_kzt, pagerank, betweenness, pass_through, fanin_share, fanout_share, seed_reach_fraction, min_seed_distance, same_day_flow_ratio, relay_2d_ratio, peak_day_share, peer_anomaly_score, retention, balance_score` |
-| float64 — percentiles | `in_deg_pct, out_deg_pct, in_kzt_pct, out_kzt_pct, in_tx_pct, out_tx_pct, total_kzt_pct, total_tx_pct, pagerank_pct, betweenness_pct, seed_reach_count_pct, seed_reach_fraction_pct, active_days_pct, same_day_flow_ratio_pct, relay_2d_ratio_pct, max_in_senders_day_pct, peak_day_share_pct, peer_anomaly_score_pct, betweenness_percentile, pagerank_percentile` |
-| float64 — decisions/contributions | `role_score, priority_score, priority_role_strength_contribution, priority_seed_reach_count_contribution, priority_betweenness_contribution, priority_pagerank_contribution, priority_total_kzt_contribution, priority_cross_cluster_degree_contribution, priority_temporal_signal_contribution, priority_peer_anomaly_score_contribution` |
-| string | `role, evidence` |
+| int64 | `gid, depth, in_deg, out_deg, in_tx, out_tx, total_tx, seed_reach_count, scc_id, scc_size, reciprocal_relationship_count, active_days, max_in_senders_day, inbound_active_days, outbound_active_days, relay_2d_eligible_days, relay_2d_matched_days, relay_2d_censored_days, repeated_route_count, repeated_route_max_support_days, temporal_return_count, temporal_return_max_support_days, outgoing_repeated_amount_tx_count, outgoing_similar_amount_tx_count, similar_amount_group_count, peer_group_size, cluster_id, cross_cluster_in_deg, cross_cluster_out_deg, cross_cluster_degree, cross_cluster_count` |
+| bool — observations | `is_seed, boundary_censored, pass_through_valid, flow_share_valid, in_cycle, same_day_flow_valid, relay_2d_valid, peak_day_share_valid, repeated_route_truncated, temporal_return_truncated, truncated_by_depth` |
+| bool — role gates | `role_consolidator_gate, role_consolidator_eligible, role_distributor_gate, role_distributor_eligible, role_transit_gate, role_transit_eligible, role_coordinator_gate, role_coordinator_eligible, role_terminal_gate, role_terminal_eligible` |
+| bool — decision availability | `decision_pass_through_valid, decision_retention_valid, decision_balance_score_valid, decision_fanout_share_valid, decision_relay_2d_ratio_valid, decision_same_day_flow_ratio_valid` |
+| bool — priority availability | `priority_role_strength_available, priority_seed_reach_count_available, priority_betweenness_available, priority_pagerank_available, priority_total_kzt_available, priority_cross_cluster_degree_available, priority_temporal_signal_available, priority_peer_anomaly_score_available` |
+| float64 — observations | `in_kzt, out_kzt, total_kzt, pagerank, betweenness, pass_through, fanin_share, fanout_share, seed_reach_fraction, min_seed_distance, same_day_flow_ratio, relay_2d_ratio, peak_day_share, peak_activity_kzt, outgoing_repeated_amount_tx_share, outgoing_similar_amount_tx_share, peer_anomaly_in_deg, peer_anomaly_out_deg, peer_anomaly_log1p_in_kzt, peer_anomaly_log1p_out_kzt, peer_anomaly_in_tx, peer_anomaly_out_tx, peer_anomaly_score, retention, balance_score, internal_out_kzt` |
+| float64 — feature/UI percentiles | `in_deg_pct, out_deg_pct, in_kzt_pct, out_kzt_pct, in_tx_pct, out_tx_pct, total_kzt_pct, total_tx_pct, pagerank_pct, betweenness_pct, seed_reach_count_pct, seed_reach_fraction_pct, active_days_pct, same_day_flow_ratio_pct, relay_2d_ratio_pct, max_in_senders_day_pct, peak_day_share_pct, peer_anomaly_score_pct, betweenness_percentile, pagerank_percentile` |
+| float64 — role diagnostics | `role_score, role_best_candidate_score, role_consolidator_score, role_consolidator_available_weight, role_distributor_score, role_distributor_available_weight, role_transit_score, role_transit_available_weight, role_coordinator_score, role_coordinator_available_weight, role_terminal_score, role_terminal_available_weight` |
+| float64 — decision ratios | `decision_pass_through, decision_retention, decision_balance_score, decision_fanout_share, decision_relay_2d_ratio, decision_same_day_flow_ratio` |
+| float64 — decision percentiles | `decision_in_deg_percentile, decision_in_tx_percentile, decision_in_kzt_percentile, decision_out_deg_percentile, decision_out_tx_percentile, decision_out_kzt_percentile, decision_seed_reach_count_percentile, decision_betweenness_percentile, decision_pagerank_percentile, decision_cross_cluster_out_deg_percentile, decision_cross_cluster_degree_percentile, decision_total_kzt_percentile` |
+| float64 — priority inputs/contributions | `priority_role_strength_value, priority_role_strength_contribution, priority_seed_reach_count_value, priority_seed_reach_count_contribution, priority_betweenness_value, priority_betweenness_contribution, priority_pagerank_value, priority_pagerank_contribution, priority_total_kzt_value, priority_total_kzt_contribution, priority_cross_cluster_degree_value, priority_cross_cluster_degree_contribution, priority_temporal_signal_value, priority_temporal_signal_contribution, priority_peer_anomaly_score_value, priority_peer_anomaly_score_contribution, priority_score` |
+| string — feature text/JSON | `pass_through_invalid_reason, same_day_flow_invalid_reason, relay_2d_invalid_reason, repeated_route_evidence, temporal_return_evidence, amount_pattern_evidence` |
+| str — decision text | `role, role_rule, role_rule_details, role_best_candidate, role_consolidator_gate_reason, role_distributor_gate_reason, role_transit_gate_reason, role_coordinator_gate_reason, role_terminal_gate_reason, priority_explanation, evidence` |
+| datetime64[ms] | `temporal_observation_start, temporal_observation_end, peak_activity_date, max_in_senders_date` |
+
+</details>
 
 Metadata version 1 requires `schema_version=1`, `status="complete"`, a nonempty
 `run_id`, `started_at`, `completed_at`, `runtime_seconds`, `command`,
@@ -192,57 +209,89 @@ contains just the three submission CSVs. The rich feature artifact remains in
 the reproducible analysis run, so a bare three-CSV package is not a substitute
 for the complete viewer input.
 
-## Rules and integration status
+## Rules and integrated contracts
 
-The shared baseline is `origin/testing@b601280`, containing Member 1 graph
-commit `329e432` and Member 2 decision commit `34d1c34`. Their post-audit
-fixes and contract documents were not yet published when this integration began.
-The UI branch changes consumer/integration code and packages strict schemas;
-it does not rewrite teammates' graph or decision engines.
+This branch integrates Member 1's post-audit feature commit `bf4859c`, followed
+by Member 2's decision/export commit `bf5776e`, on shared testing commit
+`b601280`. The viewer consumes their completed contracts:
 
-Member-owned contract handoffs are
-`documentation/feature-contract.md`, `documentation/data-quality.md`, and
-`documentation/decision-rules.md`. Until those commits arrive, the current
-authoritative implementations are [graph features](src/graph_features.py),
-[temporal features](src/temporal.py), [roles](src/roles.py),
-[priority](src/priority.py) and [clustering](src/clustering.py).
-The [audit](documentation/technical-brief-audit.md) lists unresolved analytical
-findings; the release record states which are still pending.
+- [Feature contract v2](documentation/feature-contract.md): exact metrics,
+  units, observation flags, temporal denominators and bounded pattern evidence.
+- [Data-quality profile](documentation/data-quality.md): input hashes, counts,
+  reconciliation and the supplied sample's observation limits.
+- [Decision contract brief-decisions-v1](documentation/decision-rules.md):
+  full formulas, gates, tie rules, explanations and strict export validation.
 
-Current role formulas use P(x) = average-tie percentile over available values
-and normalized weighted component means. Missing components do not contribute
-to the mean's denominator; missing percentile inputs become zero. A candidate
-must pass its gate and score at least 0.55:
+The [architecture](documentation/architecture.md) shows how these layers join.
+The [audit](documentation/technical-brief-audit.md) is the historical starting
+assessment; final integration checks and remaining limits are recorded with
+the release under `submission/`. Verification counts in the member documents
+describe their handoff snapshots; the 180-column schema above and the release
+record describe the combined implementation.
+
+All roles use the shared P(x): average tied rank divided by the number of
+available values. A singleton receives 1, a constant group of N values receives
+(N+1)/(2N), and missing/nonfinite values stay missing. Role scores divide the
+weighted sum by the sum of available component weights; an observed zero retains
+its weight, while a missing component does not. Missing values cannot pass a
+numeric gate. Every structural candidate must pass its gate and score at least
+0.55; the thresholds are transparent heuristics, not learned probabilities.
 
 | Role | Weighted score components | Gate |
 |---|---|---|
 | Consolidator | .30 P(in degree), .20 P(in tx), .20 P(in KZT), .20 P(seed reach), .10 retention | in degree ≥2 and (seed reach ≥2 or P(in degree) ≥.80) |
 | Distributor | .40 P(out degree), .20 P(out tx), .20 P(out KZT), .10 fanout share, .10 P(cross-cluster out degree) | out degree ≥2 |
 | Transit | .25 balance, .20 two-day relay, .20 P(betweenness), .15 P(in degree), .15 P(out degree), .05 same-day ratio | both degrees >0 and (pass-through in [.5,1.5] or relay ≥.5) |
-| Coordinator | .25 P(seed reach), .25 P(betweenness), .15 P(PageRank), .15 P(cross-cluster degree), .10 P(in degree), .10 P(out degree) | at least two of seed reach/betweenness/PageRank/cross-cluster percentiles ≥.90 |
-| Terminal | .50 no-outflow signal, .20 retention, .15 P(in KZT), .10 P(in tx), .05 P(in degree) | non-seed, depth <4, in degree >0, out degree=0 or pass-through ≤.10 |
-| Peripheral | min(max candidate score, .549999) | no eligible winning candidate |
+| Coordinator | .25 P(seed reach), .25 P(betweenness), .15 P(PageRank), .15 P(cross-cluster degree), .10 P(in degree), .10 P(out degree) | at least two of seed reach/betweenness/PageRank/cross-cluster percentiles ≥.90, and at least one observed relationship |
+| Terminal | .50 no-outflow signal, .20 retention, .15 P(in KZT), .10 P(in tx), .05 P(in degree) | non-seed, depth <4, uncensored flags, positive incoming degree/KZT, 0 ≤ outgoing KZT ≤.10 × incoming KZT, and (out degree=0 or valid pass-through ≤.10) |
+| Peripheral | strongest structurally gated candidate below .55; zero if no structural gate passes | no eligible winning candidate |
 
 Pass-through = observed out/in when valid; retention = clip(1−pass-through,0,1);
-balance = clip(1−abs(1−pass-through),0,1). No-outflow signal is 1 when out degree
-is zero, otherwise clip(1−pass-through/.1,0,1) when available. Invalid seed ratios
-stay missing. Highest eligible score wins; equal scores break in the order
-coordinator, consolidator, distributor, transit, terminal. Peripheral strength
-is a fallback, not positive confidence. The old decision percentile singleton
-special case differs from the feature helper; this audit finding awaits Member 2.
+balance = clip(1−abs(1−pass-through),0,1). Fanout share is out degree divided by
+in degree + out degree when available. No-outflow signal is 1 when both observed
+out degree and outgoing KZT are zero and incoming KZT is positive; otherwise it
+is clip(1−pass-through/.1,0,1) where the ratio is valid. Seed, hop-4 and explicit
+invalidity flags suppress dependent ratios and fallback derivations. Highest
+eligible score wins; equal scores break in the order coordinator, consolidator,
+distributor, transit, terminal. A zero-activity isolate has peripheral strength
+zero. The exported `role_rule_details` and candidate gate diagnostics explain
+the actual winning rule and available-weight denominator.
 
 Priority = .25 role strength + .20 P(seed reach) + .15 P(betweenness)
 + .10 P(PageRank) + .10 P(total KZT) + .10 P(cross-cluster degree)
-+ .05 temporal signal + .05 peer anomaly. Temporal signal is the bounded
-maximum of relay and same-day ratios (missing becomes zero). Each weighted term
-is exported and displayed. This score ranks review effort separately from role.
++ .05 temporal signal + .05 peer anomaly. Temporal signal is the bounded maximum
+of available valid relay and same-day ratios. Priority keeps fixed weights:
+missing terms contribute zero without renormalization, with separate availability
+flags. All eight exported contributions sum to priority. `priority_explanation`
+and `top_nodes.why` identify the three leading contributions; `evidence` explains
+the assigned role independently. Scores rank review effort, not guilt.
 
-Louvain uses a sum-KZT undirected projection, resolution 1, seed 42. All other
-flow metrics retain directed edges. Fixed randomness alone does not guarantee
-row-permutation invariance in the baseline; the graph/cluster canonicalization
-fix awaits the members' commits. Baseline temporal features include active dates,
-same-day outflow overlap, D/D+1/D+2 outbound-date overlap, max same-day distinct
-senders and peak-day activity share. Date overlap is not money tracing.
+Louvain uses an amount-weighted undirected projection, resolution 1, seed 42.
+Exact numeric node/edge ordering and canonical `math.fsum` aggregation stabilize
+equivalent input permutations; other flow metrics retain directed edges. All
+isolates are included, and no cluster count is prescribed. Cluster labels sort
+by seed count, internal turnover and minimum gid as documented in the decision
+contract. Reproducibility is tied to the pinned dependency versions.
+
+## Temporal and pattern evidence
+
+Two-day relay is the fraction of eligible incoming-active dates D that have any
+outgoing activity on D, D+1 or D+2. Eligible dates satisfy D+2 ≤ the latest
+observed transaction date; the exported eligible/matched/censored day counts
+make that denominator visible. Seeds, boundary nodes and nodes without a full
+follow-up denominator have an unavailable ratio, not measured zero. Same-day
+flow is outgoing KZT on incoming-active dates divided by all outgoing KZT,
+subject to its availability flags. Neither ratio traces particular funds.
+
+The feature contract also specifies sender maxima and their dates, sampled
+peak-date KZT/share, six depth-peer anomaly components, repeated A→B→C routes,
+reciprocal A→B→A date observations and repeated/similar outgoing amount groups.
+Route searches have per-node candidate/probe limits and explicit truncation
+flags; evidence stores only the strongest bounded examples with exact string
+gids, observed dates and KZT. These optional descriptors do not become new role
+or priority inputs merely by being exported. Date patterns do not prove intraday
+order or returned funds, and observed amount groups cannot reveal omitted
+sub-threshold transfers.
 
 ## Optional AI and privacy
 
@@ -279,5 +328,8 @@ out/                          ignored generated run with auxiliary metrics
 submission/                   three tracked strict CSVs and release records
 tests/                        graph, decision, UI, AI and offline integration tests
 documentation/architecture.md data flow and ownership
+documentation/feature-contract.md exact feature/availability semantics
+documentation/data-quality.md supplied input profile and limitations
+documentation/decision-rules.md formulas, gates and export contract
 DEMO.md                       numerical five-minute walkthrough
 ```

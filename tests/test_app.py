@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from app import EXPORT_FILES, NODE_COLUMNS, SOURCE_FILES, exact_ids, load_data, merged_nodes, pyvis_html, selected_neighborhood
+from app import EXPORT_FILES, NODE_COLUMNS, SOURCE_FILES, daily_activity, evidence_records, exact_ids, load_data, merged_nodes, observed_ratio, pyvis_html, selected_neighborhood
 from pipeline import run
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,13 +68,24 @@ def test_queue_covers_every_node_and_filters(ui, exports):
     ui.multiselect[0].set_value(["peripheral"]).run()
     assert len(ui.dataframe[0].value) == expected.role.eq("peripheral").sum()
     ui.multiselect[0].set_value([]).run()
+    selected_cluster = str(expected.cluster_id.iloc[0])
+    ui.multiselect[1].set_value([selected_cluster]).run()
+    assert len(ui.dataframe[0].value) == expected.cluster_id.astype(str).eq(selected_cluster).sum()
+    ui.multiselect[1].set_value([]).run()
     ui.multiselect[2].set_value([4]).run()
     assert len(ui.dataframe[0].value) == pd.read_parquet(ROOT / "data" / "nodes.parquet").depth.eq(4).sum()
     ui.multiselect[2].set_value([]).run()
     next(x for x in ui.selectbox if x.label == "Seed status").set_value("Seed").run()
     assert len(ui.dataframe[0].value) == 81
+    next(x for x in ui.selectbox if x.label == "Seed status").set_value("Non-seed").run()
+    assert len(ui.dataframe[0].value) == 2248 - 81
+    ui.number_input[0].set_value(0.5).run()
+    source_nodes = pd.read_parquet(ROOT / "data" / "nodes.parquet")
+    seed_ids = source_nodes.loc[source_nodes.is_seed, "gid"]
+    assert len(ui.dataframe[0].value) == (expected.priority_score.ge(0.5) & ~expected.gid.isin(seed_ids)).sum()
     ui.number_input[0].set_value(1.0).run()
     assert ui.dataframe[0].value.empty
+    assert not any(item.label == "Open node card" for item in ui.button)
     assert not ui.exception
 
 
@@ -439,3 +450,108 @@ def test_ai_navigation_and_regeneration_invalidate_saved_answer(small_export, mo
     ui.run()
     assert not any(item.value == "Grounded original run" for item in ui.markdown)
     assert not ui.error and not ui.exception
+
+
+def test_card_shows_exported_winning_rule_and_priority_explanation(ui, exports):
+    frame = pd.read_parquet(exports / "node_features.parquet")
+    candidate = frame.sort_values("priority_score", ascending=False).iloc[0]
+    page(ui, "Node card")
+    ui.text_input(key="node_gid_input").set_value(str(candidate.gid)).run()
+    shown = [item.value for item in ui.markdown]
+    assert candidate.role_rule in shown
+    assert candidate.role_rule_details in shown
+    assert candidate.priority_explanation in shown
+    assert any("Score contribution" in item.value for item in ui.dataframe)
+    candidates = next(item.value for item in ui.dataframe if "Candidate" in item.value)
+    assert set(candidates.Candidate) == {"coordinator", "consolidator", "distributor", "transit", "terminal"}
+    assert "Gate comparison" in candidates and "Available weight" in candidates
+    assert not ui.error and not ui.exception
+
+
+def test_ratio_availability_distinguishes_censored_from_observed_zero():
+    unavailable = pd.Series({"relay_2d_ratio": 0.0, "relay_2d_valid": False, "relay_2d_invalid_reason": "no_complete_followup_window"})
+    assert "no incoming date has a complete" in observed_ratio(unavailable, "relay_2d_ratio", "relay_2d_valid", "relay_2d_invalid_reason")
+    available = unavailable.copy()
+    available["relay_2d_valid"] = True
+    assert observed_ratio(available, "relay_2d_ratio", "relay_2d_valid", "relay_2d_invalid_reason") == "0.000"
+
+
+def test_optional_evidence_serializes_exact_nested_gids():
+    large = 2**63 - 1
+    source = json.dumps([{"src": large, "via": str(large - 1), "dst": "7", "recipient_gids": [large, "7"],
+                          "support_days": 2, "date_pairs": [["2026-07-01", "2026-07-03"]], "in_kzt_on_support_dates": 12345.67}])
+    parsed = evidence_records(source)
+    assert parsed[0]["src"] == str(large)
+    assert parsed[0]["via"] == str(large - 1)
+    assert parsed[0]["recipient_gids"] == [str(large), "7"]
+    assert parsed[0]["in_kzt_on_support_dates"] == 12345.67
+    assert parsed[0]["date_pairs"] == [["2026-07-01", "2026-07-03"]]
+    with pytest.raises(ValueError, match="floating-point"):
+        evidence_records('[{"src": 9007199254740994.0}]')
+
+
+def test_card_displays_route_burst_amount_and_peer_evidence(ui, exports):
+    frame = pd.read_parquet(exports / "node_features.parquet")
+    candidate = frame.loc[frame.repeated_route_count.gt(0)].iloc[0]
+    page(ui, "Node card")
+    ui.text_input(key="node_gid_input").set_value(str(candidate.gid)).run()
+    markdown = "\n".join(item.value for item in ui.markdown)
+    assert "role strength" in markdown.lower() or candidate.role_rule in markdown
+    assert "eligible incoming dates" in markdown
+    assert "partial-follow-up dates excluded" in markdown
+    assert str(candidate.max_in_senders_date.date()) in markdown
+    route = json.loads(candidate.repeated_route_evidence)[0]
+    records = [json.loads(item.value) for item in ui.json]
+    assert any(isinstance(record, list) and route in record for record in records)
+    assert isinstance(route["src"], str) and isinstance(route["via"], str) and isinstance(route["dst"], str)
+    anomaly = next(item.value for item in ui.dataframe if "Deviation component" in item.value)
+    assert len(anomaly) == 6
+    assert not ui.error and not ui.exception
+
+
+def test_censored_card_and_truncated_search_explain_limits(ui, exports):
+    frame = pd.read_parquet(exports / "node_features.parquet")
+    candidate = frame.loc[frame.repeated_route_truncated].iloc[0]
+    page(ui, "Node card")
+    ui.text_input(key="node_gid_input").set_value(str(candidate.gid)).run()
+    assert any("lower bounds" in item.value for item in ui.warning)
+    boundary = frame.loc[frame.depth.eq(4)].iloc[0]
+    ui.text_input(key="node_gid_input").set_value(str(boundary.gid)).run()
+    shown = {item.label: item.value for item in ui.metric}
+    assert "Unavailable" in shown["Temporal relay"]
+    assert "beyond hop 4" in shown["Temporal relay"]
+    assert boundary.role_rule in [item.value for item in ui.markdown]
+    assert not ui.error and not ui.exception
+
+
+def test_daily_activity_normalizes_mixed_dates_and_offsets_to_utc_midnight():
+    gid = 2**63 - 1
+    tx = pd.DataFrame({"src": [gid, gid, 3, 4], "dst": [2, 2, gid, gid],
+        "date": ["2026-07-01", "2026-07-01T23:30:00-02:00", "2026-07-02T01:00:00+03:00", pd.Timestamp("2026-07-02 08:30")],
+        "sum_kzt": [5000., 7000., 11000., 13000.]})
+    original = tx.copy(deep=True)
+    daily = daily_activity(tx, gid)
+    assert daily.index.tolist() == [pd.Timestamp("2026-07-01"), pd.Timestamp("2026-07-02")]
+    assert daily["Incoming KZT"].tolist() == [11000., 13000.]
+    assert daily["Outgoing KZT"].tolist() == [5000., 7000.]
+    assert daily.index.tz is None
+    pd.testing.assert_frame_equal(tx, original)
+
+
+def test_card_renders_mixed_date_format_input(small_export, monkeypatch):
+    out, source, gids = small_export
+    tx = pd.read_parquet(source / "transactions.parquet")
+    tx = pd.concat([tx] * 3, ignore_index=True)
+    tx["date"] = ["2026-07-01", "2026-07-01T23:30:00-02:00", "2026-07-02T01:00:00+03:00"]
+    tx.to_parquet(source / "transactions.parquet", index=False)
+    edges = pd.read_parquet(source / "edges.parquet")
+    edges["sum_kzt"], edges["n_tx"] = 30000., 3
+    edges.to_parquet(source / "edges.parquet", index=False)
+    refresh_manifest(out, source)
+    monkeypatch.setenv("MONEY_GRAPH_OUTPUT_DIR", str(out))
+    monkeypatch.setenv("MONEY_GRAPH_DATA_DIR", str(source))
+    ui = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30).run()
+    page(ui, "Node card")
+    ui.text_input(key="node_gid_input").set_value(str(gids[0])).run()
+    assert not ui.error and not ui.exception
+    assert len(ui.get("vega_lite_chart")) == 1

@@ -148,6 +148,10 @@ def validate_artifacts(out_dir: Path, source_nodes: pd.DataFrame, edges: pd.Data
     Consistency is checked here; analytical interpretation belongs to the
     decision modules. This does not certify the quality of their explanations.
     """
+    # Member 2 owns the authoritative contract, including independent raw-edge
+    # turnover checks and exact reconciliation of ranking explanations.
+    validate_submission(out_dir, expected_nodes=expected_nodes,
+                        source_nodes=source_nodes, source_edges=edges)
     tables = {
         name: _read_strict_csv(out_dir / name, columns, {
             "nodes_roles.csv": ("gid", "cluster_id"),
@@ -336,21 +340,17 @@ def _run_staged(data_dir: Path, out_dir: Path, stage: Path, submission_dir: Path
     role_frame = assign_roles(features)
     features = features.merge(role_frame, on="gid", validate="one_to_one")
     features = score_priority(features, role_frame)
-    # Add feature percentiles used by coordinator evidence strings.
+    # Retain the viewer aliases without introducing another percentile policy.
     for name in ("betweenness", "pagerank"):
-        features[f"{name}_percentile"] = features[name].rank(method="average", pct=True).fillna(0)
+        features[f"{name}_percentile"] = features[f"{name}_pct"]
     features = add_evidence(features)
     clusters = cluster_summaries(features, graph, nodes)
     resilience = resilience_analysis(graph, features)
     write_exports(features, clusters, stage)
-    # Compatibility seam for the current rich CSV exporter. The decision engine
-    # remains authoritative; only serialization is split into the agreed files.
-    features[SUBMISSION_COLUMNS["nodes_roles.csv"]].to_csv(stage / "nodes_roles.csv", index=False)
-    detailed = features.copy()
-    detailed.attrs = {}
-    detailed.to_parquet(stage / "node_features.parquet", index=False)
+    # The decision export module owns both native CSVs and the rich artifact.
+    # Inspect the actual serialized schema for provenance without rewriting it.
+    detailed = pd.read_parquet(stage / "node_features.parquet")
     resilience.to_csv(stage / "resilience.csv", index=False)
-    validate_submission(stage, expected_nodes=2248, source_nodes=nodes, features=features)
     counts = validate_artifacts(stage, nodes, edges)
     if input_hashes != {name: file_hash(data_dir / name) for name in INPUT_NAMES}:
         raise ValueError("Source files changed during computation; no outputs were published")

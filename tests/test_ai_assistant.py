@@ -180,6 +180,51 @@ def test_null_temporal_evidence_is_unavailable_and_has_date_caveat(tools):
     assert "beyond hop 4" in result.text
 
 
+def test_same_day_ratio_has_date_only_caveat(tools):
+    tools.nodes["same_day_flow_ratio"] = [0.5, None, 0.0, None]
+    gid = str(tools.nodes.gid.iloc[0])
+    result = validate_answer(json.dumps({"claims": [claim("/same_day_flow_ratio", 0.5)]}), ledger_for(tools, gid), tools)
+    assert len(result.sources) == 1
+    assert "date-only" in result.text and "intraday ordering" in result.text
+
+
+@pytest.mark.parametrize("prefix", ["repeated_route", "temporal_return"])
+@pytest.mark.parametrize("truncated", [False, True])
+def test_route_claims_include_per_node_search_limits(tools, prefix, truncated):
+    tools.nodes[prefix + "_count"] = [4, 0, 0, 0]
+    tools.nodes[prefix + "_truncated"] = [truncated, False, False, False]
+    gid = str(tools.nodes.gid.iloc[0])
+    result = validate_answer(json.dumps({"claims": [claim(f"/{prefix}_count", 4)]}), ledger_for(tools, gid), tools)
+    assert len(result.sources) == 1 and "date-only" in result.text
+    if truncated:
+        assert f"gid {gid}: the" in result.text
+        assert "search was truncated" in result.text and "lower bounds" in result.text
+    else:
+        assert "bounded search" in result.text and "Absent evidence does not rule out" in result.text
+        assert "lower bounds" not in result.text
+
+
+def test_route_caveats_bind_to_the_cited_node_not_comparison_neighbor(tools):
+    gids = tools.nodes.gid.astype(str).tolist()[:2]
+    tools.nodes["repeated_route_count"] = [1, 10, 0, 0]
+    tools.nodes["repeated_route_truncated"] = [False, True, False, False]
+    ledger = {"S1": {"tool": "compare_nodes", "arguments": {"gid1": gids[0], "gid2": gids[1]},
+                     "result": _tool_payload(tools.compare_nodes(*gids))}}
+    result = validate_answer(json.dumps({"claims": [claim("/node_1/repeated_route_count", 1)]}), ledger, tools)
+    assert result.node_gids == (gids[0],)
+    assert "bounded search" in result.text and "lower bounds" not in result.text
+
+
+@pytest.mark.parametrize("metric", ["outgoing_repeated_amount_tx_share", "outgoing_similar_amount_tx_share"])
+def test_amount_observations_include_threshold_and_overlap_limits(tools, metric):
+    tools.nodes[metric] = [0.5, None, 0.0, None]
+    gid = str(tools.nodes.gid.iloc[0])
+    result = validate_answer(json.dumps({"claims": [claim(f"/{metric}", 0.5)]}), ledger_for(tools, gid), tools)
+    assert len(result.sources) == 1
+    assert "date-only" in result.text and "5,000 KZT" in result.text
+    assert "not intentional splitting" in result.text and "shares must not be added" in result.text
+
+
 def test_paths_provide_validated_navigation_to_exact_interior_node(tools):
     gids = [str(gid) for gid in tools.nodes.gid.iloc[:3]]
     ledger = {"S1": {"tool": "find_paths", "arguments": {"src": gids[0], "dst": gids[2]},

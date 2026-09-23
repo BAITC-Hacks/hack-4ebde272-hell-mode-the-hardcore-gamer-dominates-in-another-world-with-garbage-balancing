@@ -29,6 +29,13 @@ ROLE_COLORS = {
     "distributor": "#ea580c", "terminal": "#16a34a", "peripheral": "#64748b",
 }
 MISSING = "Not exported"
+UNAVAILABLE_REASONS = {
+    "seed_inbound_incomplete": "seed incoming transfers are incomplete",
+    "boundary_outbound_incomplete": "outgoing transfers beyond hop 4 are unobserved",
+    "no_inbound_activity": "no incoming activity is present in the sample",
+    "no_outgoing_activity": "no outgoing activity is present in the sample",
+    "no_complete_followup_window": "no incoming date has a complete two-day follow-up window",
+}
 NODE_COLUMNS = ["gid", "role", "role_score", "cluster_id", "priority_score", "evidence"]
 SOURCE_FILES = ("nodes.parquet", "edges.parquet", "transactions.parquet")
 EXPORT_FILES = ("nodes_roles.csv", "clusters.csv", "top_nodes.csv", "node_features.parquet", "resilience.csv")
@@ -449,6 +456,79 @@ def percentile(frame: pd.DataFrame, col: str, gid: int) -> str:
     return f"{values.rank(pct=True).loc[row_index[0]] * 100:.1f}th percentile"
 
 
+def observed_ratio(row: pd.Series, metric: str, flag: str, reason: str | None = None) -> str:
+    """Present explicit availability; never turn an unobserved ratio into zero."""
+    invalid = flag in row.index and not as_bool(value(row, flag, default=False))
+    if invalid or value(row, metric) is None:
+        code = value(row, reason, default="") if reason else ""
+        explanation = UNAVAILABLE_REASONS.get(str(code), str(code).replace("_", " "))
+        return "Unavailable" + (f": {explanation}" if explanation else "")
+    return fmt_metric(value(row, metric))
+
+
+def evidence_records(raw: object) -> list[dict]:
+    """Decode optional evidence while keeping nested int64 gids as browser text."""
+    records = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(records, list) or any(not isinstance(item, dict) for item in records):
+        raise ValueError("Evidence must be a JSON list of records")
+
+    def browser_safe(item, key=None):
+        if key in {"gid", "src", "via", "dst"}:
+            return str(exact_ids(pd.Series([item], dtype="object"), f"evidence.{key}").iloc[0])
+        if key == "recipient_gids":
+            if not isinstance(item, list):
+                raise ValueError("Evidence recipient_gids must be a list")
+            return exact_ids(pd.Series(item, dtype="object"), "evidence.recipient_gids").astype(str).tolist()
+        if isinstance(item, dict):
+            return {name: browser_safe(part, name) for name, part in item.items()}
+        if isinstance(item, list):
+            return [browser_safe(part) for part in item]
+        if isinstance(item, float) and not math.isfinite(item):
+            raise ValueError("Evidence amounts must be finite")
+        return item
+
+    return browser_safe(records)
+
+
+def render_evidence_records(row: pd.Series, field: str, title: str) -> None:
+    st.markdown(f"**{title}**")
+    raw = value(row, field)
+    if raw is None:
+        st.caption("No evidence artifact was exported for this observation.")
+        return
+    try:
+        records = evidence_records(raw)
+    except (ValueError, TypeError) as exc:
+        st.warning(f"Cannot display {title.lower()}: {exc}")
+        return
+    if records:
+        st.json(records, expanded=False)
+    else:
+        st.caption("No matching pattern was exported within the supplied sample and search scope.")
+
+
+def render_role_diagnostics(row: pd.Series) -> None:
+    winning_rule = value(row, "role_rule", "role_rule_explanation", "winning_rule", "rule_explanation")
+    if winning_rule is not None:
+        st.write(winning_rule)
+    details = value(row, "role_rule_details")
+    if details is not None:
+        st.write(details)
+    candidates = []
+    for role in ROLE_COLORS:
+        if f"role_{role}_score" not in row.index:
+            continue
+        candidates.append({"Candidate": role, "Strength": value(row, f"role_{role}_score"),
+            "Structural gate passed": value(row, f"role_{role}_gate"),
+            "Eligible at threshold": value(row, f"role_{role}_eligible"),
+            "Available weight": value(row, f"role_{role}_available_weight"),
+            "Gate comparison": value(row, f"role_{role}_gate_reason", default=MISSING)})
+    if candidates:
+        with st.expander("Evaluated role candidates"):
+            st.dataframe(pd.DataFrame(candidates), hide_index=True, width="stretch")
+            st.caption("Exported rule diagnostics; missing components are excluded from each role's available-weight denominator.")
+
+
 def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
     st.title("Node card")
     if nodes.empty:
@@ -475,7 +555,7 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
     depth = value(row, "depth", default=MISSING)
     is_seed = as_bool(value(row, "is_seed", "seed", default=False))
     boundary = depth == 4 or as_bool(value(row, "boundary_censored", "truncated_by_depth", default=False))
-    st.subheader(f"gid {gid:,} · {role}")
+    st.subheader(f"gid {gid} · {role}")
     top = st.columns(6)
     top[0].metric("Role strength", fmt_metric(value(row, "role_score", "role_confidence")))
     top[1].metric("Priority", fmt_metric(value(row, "priority_score", "priority")))
@@ -504,8 +584,10 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
     ]
     columns = st.columns(3)
     for index, (label, left, right, kind) in enumerate(fields):
-        if label == "Temporal relay" and (boundary or is_seed):
-            left = "Unavailable: sampled flow is incomplete"
+        if label == "Temporal relay":
+            left = observed_ratio(row, "relay_2d_ratio", "relay_2d_valid", "relay_2d_invalid_reason")
+            if (boundary or is_seed) and "relay_2d_valid" not in row.index:
+                left = "Unavailable: sampled flow is incomplete"
         if label == "PageRank percentile" and left is None:
             left = percentile(nodes, "pagerank", gid) if "pagerank" in nodes else MISSING
         if label == "Betweenness percentile" and left is None:
@@ -519,25 +601,22 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
     with left:
         st.subheader("Role evidence")
         st.write(value(row, "evidence", "role_evidence", default="No evidence text was exported."))
-        winning_rule = value(row, "role_rule_explanation", "winning_rule", "rule_explanation")
-        if winning_rule is not None:
-            st.write(winning_rule)
+        render_role_diagnostics(row)
     with right:
         st.subheader("Investigation-priority explanation")
         detail = value(row, "priority_explanation", "priority_decomposition", "why", "evidence",
                        default="No decomposition was exported; the UI does not reconstruct the priority formula.")
+        st.write(detail)
         contributions = [name for name in nodes.columns if name.startswith("priority_") and name.endswith("_contribution")]
         if contributions:
             breakdown = pd.DataFrame({
                 "Signal": [name.removeprefix("priority_").removesuffix("_contribution").replace("_", " ") for name in contributions],
+                "Input value": [value(row, name.removesuffix("_contribution") + "_value") for name in contributions],
+                "Available": [value(row, name.removesuffix("_contribution") + "_available") for name in contributions],
                 "Score contribution": [row[name] for name in contributions],
-            })
+            }).sort_values("Score contribution", ascending=False, kind="stable")
             st.dataframe(breakdown, hide_index=True, width="stretch")
-            st.caption("Exported contributions sum to the displayed priority score.")
-            if value(row, "priority_explanation", "why") is not None:
-                st.write(value(row, "priority_explanation", "why"))
-        else:
-            st.write(detail)
+            st.caption("Exported contributions sum to the priority score. Unavailable terms contribute zero with fixed weights; they are not measured zeros.")
     st.subheader("Suggested next data request")
     requests = []
     if depth == 4:
@@ -546,39 +625,100 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
         requests.append("Retrieve incoming transfers and opening balance context for this seed; seed inflows are incomplete in this sample.")
     if value(row, "in_deg") == 0 and value(row, "out_deg") == 0:
         requests.append("Confirm extract completeness for this isolated gid and request a longer history before interpreting absent activity.")
+    if as_number(value(row, "relay_2d_censored_days")) > 0:
+        requests.append("Extend transaction history at least two days past the observation end to assess the omitted partial-follow-up incoming dates.")
     if not requests:
         requests.append("Retrieve a longer observation window and KYC / counterparty context for the highest-value adjacent flows.")
     for request in requests:
         st.markdown(f"- {request}")
     st.caption("The sample only covers intrabank transfers of at least 5,000 KZT during July 2026. Request other banks, smaller transfers and a longer period to assess missing context.")
     render_temporal_evidence(data, row, gid)
+    render_pattern_evidence(row)
+    render_anomaly_evidence(row)
     render_counterparties(data, gid)
+
+
+def daily_activity(transactions: pd.DataFrame, gid: int) -> pd.DataFrame:
+    """Aggregate dates with the feature contract's UTC-midnight normalization."""
+    selected = transactions.loc[transactions["src"].eq(gid) | transactions["dst"].eq(gid)].copy()
+    selected["date"] = pd.to_datetime(selected["date"], utc=True, format="mixed").dt.tz_convert(None).dt.normalize()
+    incoming = selected.loc[selected["dst"].eq(gid)].groupby("date")["sum_kzt"].sum().rename("Incoming KZT")
+    outgoing = selected.loc[selected["src"].eq(gid)].groupby("date")["sum_kzt"].sum().rename("Outgoing KZT")
+    return pd.concat([incoming, outgoing], axis=1, sort=False).fillna(0).sort_index()
 
 
 def render_temporal_evidence(data: InvestigationData, row: pd.Series, gid: int) -> None:
     with st.expander("Date-level activity and structural evidence"):
-        st.caption("Dates do not establish intraday order or prove that the same funds moved onward. End-of-July receipts may lack the following two days of observations.")
-        fields = [("Active dates", "active_days"), ("Busiest-date share of observed activity", "peak_day_share"),
-                  ("Most distinct senders on one date", "max_in_senders_day"), ("Strongly connected component size", "scc_size")]
+        st.caption("Dates do not establish intraday order or prove that the same funds moved onward. The two-day relay ratio uses only incoming dates with complete follow-up through the latest supplied transaction date.")
+        start, end = value(row, "temporal_observation_start"), value(row, "temporal_observation_end")
+        if start is not None and end is not None:
+            st.write(f"Observed date window: {pd.Timestamp(start).date().isoformat()} — {pd.Timestamp(end).date().isoformat()}")
+        st.write("Two-day relay ratio: " + observed_ratio(row, "relay_2d_ratio", "relay_2d_valid", "relay_2d_invalid_reason"))
+        if "relay_2d_eligible_days" in row.index:
+            st.write(f"Relay evidence: {fmt_metric(value(row, 'relay_2d_matched_days'))} matched / "
+                     f"{fmt_metric(value(row, 'relay_2d_eligible_days'))} eligible incoming dates; "
+                     f"{fmt_metric(value(row, 'relay_2d_censored_days'))} partial-follow-up dates excluded.")
+        st.write("Same-day outgoing amount overlap: " + observed_ratio(row, "same_day_flow_ratio", "same_day_flow_valid", "same_day_flow_invalid_reason"))
+        st.write("Busiest-date share of observed activity: " + observed_ratio(row, "peak_day_share", "peak_day_share_valid"))
+        fields = [("Active dates", "active_days"), ("Incoming-active dates", "inbound_active_days"),
+                  ("Outgoing-active dates", "outbound_active_days"), ("Most distinct senders on one date", "max_in_senders_day")]
         for label, name in fields:
             st.write(f"{label}: {fmt_metric(value(row, name))}")
-        st.caption("A strongly connected component indicates possible directed return paths, not dated evidence of returned funds.")
+        for label, name in (("Date of sender maximum", "max_in_senders_date"), ("Peak activity date", "peak_activity_date")):
+            item = value(row, name)
+            st.write(f"{label}: {pd.Timestamp(item).date().isoformat() if item is not None else 'Unavailable'}")
+        peak_amount = value(row, "peak_activity_kzt")
+        st.write(f"Peak daily incoming + outgoing activity: {float(peak_amount):,.2f} KZT" if peak_amount is not None else "Peak daily activity: Unavailable")
+        st.caption("Sender maxima and peak dates describe sampled activity; no universal burst or coordination threshold is implied. Incoming + outgoing amounts count self-transfers twice.")
         if data.transactions.empty:
             st.info("No dated transactions are loaded.")
             return
-        tx = data.transactions
-        incoming = tx.loc[tx["dst"] == gid, ["date", "sum_kzt"]].copy()
-        outgoing = tx.loc[tx["src"] == gid, ["date", "sum_kzt"]].copy()
-        if incoming.empty and outgoing.empty:
+        daily = daily_activity(data.transactions, gid)
+        if daily.empty:
             st.info("No sampled dated activity for this gid.")
             return
-        incoming["date"] = pd.to_datetime(incoming["date"])
-        outgoing["date"] = pd.to_datetime(outgoing["date"])
-        daily = pd.concat([
-            incoming.groupby("date")["sum_kzt"].sum().rename("Incoming KZT"),
-            outgoing.groupby("date")["sum_kzt"].sum().rename("Outgoing KZT"),
-        ], axis=1, sort=False).fillna(0).sort_index()
         st.bar_chart(daily, stack=False)
+
+
+def render_pattern_evidence(row: pd.Series) -> None:
+    with st.expander("Observed routes and return candidates"):
+        st.write(f"Strongly connected component size: {fmt_metric(value(row, 'scc_size'))}; "
+                 f"reciprocal counterparties: {fmt_metric(value(row, 'reciprocal_relationship_count'))}.")
+        st.caption("A strongly connected component indicates possible directed return paths. Reciprocal date patterns are observations of transfers, not tracing of the original funds.")
+        for title, prefix in (("Repeated A → B → C routes", "repeated_route"), ("Observed A → B → A returns", "temporal_return")):
+            st.write(f"{title}: {fmt_metric(value(row, prefix + '_count'))} candidates; "
+                     f"maximum support: {fmt_metric(value(row, prefix + '_max_support_days'))} incoming dates.")
+            if as_bool(value(row, prefix + "_truncated", default=False)):
+                st.warning("Search limit reached: this count and support are lower bounds within the sampled data.")
+            render_evidence_records(row, prefix + "_evidence", title + " · exact records")
+        st.caption("Each record contains exact string gids, incoming/outgoing ISO date pairs, support-day count and observed KZT volumes. Routes require at least two incoming dates; returns require one. Outgoing volume counts unique matched dates once. Same-day order is unknown.")
+        st.caption("Searches examine at most 512 candidate pairs and 20,000 date probes per node and pattern type. Only three candidates and three earliest date pairs per candidate are exported; absent evidence does not rule out other activity.")
+    with st.expander("Observed amount patterns"):
+        fields = [("Transactions in repeated exact-amount groups", "outgoing_repeated_amount_tx_count"),
+                  ("Share of outgoing transactions in exact repeats", "outgoing_repeated_amount_tx_share"),
+                  ("Transactions in same-day similar-amount groups", "outgoing_similar_amount_tx_count"),
+                  ("Share of outgoing transactions in similar groups", "outgoing_similar_amount_tx_share"),
+                  ("Same-day similar-amount groups", "similar_amount_group_count")]
+        for label, field in fields:
+            shown = "Unavailable" if field in row.index and value(row, field) is None else fmt_metric(value(row, field), 4)
+            st.write(f"{label}: {shown}")
+        render_evidence_records(row, "amount_pattern_evidence", "Observed amount groups · exact records")
+        st.caption("Amounts are KZT; n_tx counts transaction rows. Similar groups require at least three same-day transfers to two recipients, with amounts no more than 5% above the group's minimum. Exact and similar shares may overlap and must not be added.")
+        st.caption("These descriptors do not establish intentional splitting. Transfers omitted below the extract's 5,000 KZT threshold cannot be assessed; positive observed groups do not establish completeness.")
+
+
+def render_anomaly_evidence(row: pd.Series) -> None:
+    components = [name for name in row.index if name.startswith("peer_anomaly_") and name != "peer_anomaly_score" and not name.endswith("_pct")]
+    if not components:
+        return
+    with st.expander("Depth-peer anomaly details"):
+        st.write(f"Comparable depth: {fmt_metric(value(row, 'depth'))}; peer group size: {fmt_metric(value(row, 'peer_group_size'))}; "
+                 f"mean component score: {fmt_metric(value(row, 'peer_anomaly_score'))}.")
+        frame = pd.DataFrame({"Observed signal": [name.removeprefix("peer_anomaly_").replace("_", " ") for name in components],
+                              "Deviation component": [row[name] for name in components]})
+        st.dataframe(frame, hide_index=True, width="stretch")
+        st.caption("Each of six exported components has weight 1/6. Values measure absolute deviations from the median at the same sampled depth, so unusually low and high activity can both contribute. Amount components use log(1 + KZT).")
+        st.caption("The bounded median/MAD score is not a probability. When MAD is zero the component is 0 at the median and 1 elsewhere; no threshold here establishes wrongdoing.")
 
 
 def render_counterparties(data: InvestigationData, gid: int) -> None:

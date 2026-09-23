@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import time
 
 import pandas as pd
@@ -68,6 +70,73 @@ def test_metadata_associates_all_artifacts_with_inputs(completed_run):
     assert release["analytics_run_metadata_sha256"] == pipeline.file_hash(destination / "run_metadata.json")
     for name, record in release["outputs"].items():
         assert record["sha256"] == pipeline.file_hash(submission / name)
+
+
+def test_native_decision_reasons_and_observation_flags(completed_run):
+    destination, _ = completed_run
+    rich = pd.read_parquet(destination / "node_features.parquet").set_index("gid")
+    top = pd.read_csv(destination / "top_nodes.csv", dtype={"gid": "int64"}).set_index("gid")
+    ranked = rich.reindex(top.index)
+    assert top.why.tolist() == ranked.priority_explanation.tolist()
+    assert top.why.ne(ranked.evidence).all()
+    assert rich.role_rule.str.strip().str.len().gt(0).all()
+    assert rich.role_rule_details.str.strip().str.len().gt(0).all()
+    censored = rich.is_seed | rich.depth.eq(4)
+    assert rich.loc[censored, "relay_2d_ratio"].isna().all()
+    assert not rich.loc[censored, "relay_2d_valid"].any()
+    assert rich.loc[censored, "relay_2d_invalid_reason"].str.len().gt(0).all()
+    assert rich.loc[~rich.relay_2d_valid, "relay_2d_ratio"].isna().all()
+    valid = rich.loc[rich.relay_2d_valid]
+    pd.testing.assert_series_equal(
+        valid.relay_2d_ratio,
+        valid.relay_2d_matched_days / valid.relay_2d_eligible_days,
+        check_names=False,
+    )
+    assert not rich.loc[censored, "role"].eq("terminal").any()
+
+
+def test_standalone_raw_edge_validator_survives_optimized_python(completed_run, tmp_path):
+    destination, _ = completed_run
+    command = [sys.executable, "-O", str(ROOT / "validate_submission.py"),
+               "--data", str(ROOT / "data"), "--out", str(destination)]
+    valid = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=120)
+    assert valid.returncode == 0, valid.stdout + valid.stderr
+    copied = tmp_path / "out"
+    shutil.copytree(destination, copied)
+    rich = pd.read_parquet(copied / "node_features.parquet")
+    gid = rich.loc[rich.internal_out_kzt.gt(0), "gid"].iloc[0]
+    member = rich.gid.eq(gid)
+    cluster_id = rich.loc[member, "cluster_id"].iloc[0]
+    rich.loc[member, "internal_out_kzt"] += 1000
+    rich.to_parquet(copied / "node_features.parquet", index=False)
+    clusters = pd.read_csv(copied / "clusters.csv")
+    clusters.loc[clusters.cluster_id.eq(cluster_id), "sum_kzt_internal"] += 1000
+    clusters.to_csv(copied / "clusters.csv", index=False)
+    # The two artifacts agree with each other, but independently supplied raw
+    # edges must still invalidate their fabricated internal turnover under -O.
+    invalid = subprocess.run([*command[:-1], str(copied)], cwd=ROOT,
+                             capture_output=True, text=True, timeout=120)
+    assert invalid.returncode != 0
+    assert "disagrees with source edges" in invalid.stderr
+
+
+def test_equivalent_input_permutations_preserve_integrated_decisions(completed_run, tmp_path):
+    destination, _ = completed_run
+    permuted_data = tmp_path / "permuted_data"
+    permuted_data.mkdir()
+    for name in pipeline.INPUT_NAMES:
+        original = pd.read_parquet(ROOT / "data" / name)
+        original.sample(frac=1, random_state=7).reset_index(drop=True).to_parquet(permuted_data / name, index=False)
+    permuted_out = tmp_path / "permuted_out"
+    pipeline.run(permuted_data, permuted_out)
+    for name, key in (("nodes_roles.csv", "gid"), ("clusters.csv", "cluster_id"), ("top_nodes.csv", "rank")):
+        first = pd.read_csv(destination / name).sort_values(key).reset_index(drop=True)
+        second = pd.read_csv(permuted_out / name).sort_values(key).reset_index(drop=True)
+        pd.testing.assert_frame_equal(first, second, check_exact=False, rtol=1e-12, atol=1e-12)
+    first = pd.read_parquet(destination / "node_features.parquet").set_index("gid").sort_index()
+    second = pd.read_parquet(permuted_out / "node_features.parquet").set_index("gid").sort_index()
+    pd.testing.assert_frame_equal(first, second, check_exact=False, rtol=1e-12, atol=1e-12)
+    assert pipeline.verify_run_metadata(ROOT / "data", destination)["inputs"] != pipeline.verify_run_metadata(permuted_data, permuted_out)["inputs"]
 
 
 def test_identical_regeneration_keeps_artifact_hashes_and_changes_run(completed_run, tmp_path):

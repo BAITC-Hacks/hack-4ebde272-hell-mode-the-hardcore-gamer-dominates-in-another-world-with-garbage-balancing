@@ -321,6 +321,7 @@ def validate_answer(content: str, ledger: dict[str, dict[str, Any]], tools: Grap
     if not isinstance(payload, dict) or set(payload) != {"claims"} or not isinstance(payload["claims"], list):
         return GroundedAnswer("The assistant response was rejected: unsupported text or invalid claim structure.", rejected_claims=1)
     sources, lines, node_gids = [], [], set()
+    node_paths: dict[str, set[str]] = {}
     rejected = max(0, len(payload["claims"]) - 30)
     seen = set()
     for claim in payload["claims"][:30]:
@@ -363,6 +364,8 @@ def validate_answer(content: str, ledger: dict[str, dict[str, Any]], tools: Grap
                 continue
             seen.add((source_id, path))
             node_gids.update(claim_gids)
+            for gid in claim_gids:
+                node_paths.setdefault(gid, set()).add(path)
             display = "unavailable" if actual is None else str(actual)
             label = parts[-1].replace("_", " ")
             if label == "found" and actual is False:
@@ -381,8 +384,18 @@ def validate_answer(content: str, ledger: dict[str, dict[str, Any]], tools: Grap
             limitations.append(f"gid {gid}: outgoing transfers beyond hop 4 are not present in the supplied sample. Do not interpret out_deg=0 as confirmed retention.")
         if record.get("is_seed") in (True, 1):
             limitations.append(f"gid {gid}: incoming seed activity is incomplete; observed inbound/outbound values are not complete balances.")
-    if any(any(term in source["path"] for term in ("relay", "burst", "date", "temporal")) for source in sources):
+        for prefix, label in (("repeated_route", "repeated-route"), ("temporal_return", "reciprocal-date return")):
+            if any(prefix in path for path in node_paths.get(gid, ())):
+                if record.get(prefix + "_truncated") is True:
+                    limitations.append(f"gid {gid}: the {label} search was truncated; exported counts and support are lower bounds within the supplied sample.")
+                else:
+                    limitations.append(f"gid {gid}: {label} evidence comes from a bounded search of the supplied sample; only limited candidate/date examples are exported. Absent evidence does not rule out other activity.")
+    date_fields = ("relay", "burst", "date", "temporal", "same_day", "repeated_route",
+                   "amount", "active_days", "max_in_senders", "peak_day_share")
+    if any(any(term in source["path"] for term in date_fields) for source in sources):
         limitations.append("Observations are date-only. Date overlap does not prove intraday ordering or movement of the same funds; unavailable/censored windows are not zero activity.")
+    if any("amount" in source["path"] for source in sources):
+        limitations.append("Amount patterns describe observed transfers only, not intentional splitting. Transfers below the sample's 5,000 KZT threshold are unobserved; exact-repeat and similar-amount groups may overlap, so their shares must not be added.")
     if any(source["tool"] in {"find_paths", "find_common_descendants"} for source in sources):
         limitations.append("Routes and descendants are bounded searches of the supplied directed sample; absent results do not rule out paths outside the sample or search limit.")
     text = "Verified exported evidence:\n\n" + "\n".join(lines) + "\n\n" + "\n\n".join(limitations)

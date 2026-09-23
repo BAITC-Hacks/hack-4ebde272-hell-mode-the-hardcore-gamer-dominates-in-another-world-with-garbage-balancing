@@ -89,7 +89,7 @@ def test_offline_browser_rehearsal(tmp_path, monkeypatch):
                 for gid in (connected, boundary, isolated):
                     search.fill(gid)
                     search.press("Enter")
-                    api.expect(page.get_by_role("heading", name=f"gid {int(gid):,}", exact=False)).to_be_visible()
+                    api.expect(page.get_by_role("heading", name=f"gid {gid}", exact=False)).to_be_visible()
                     api.expect(page.get_by_text("Role evidence", exact=True)).to_be_visible()
                 challenge_seconds = time.monotonic() - challenge_started
                 assert challenge_seconds < 60, "Three arbitrary-gid cards exceeded the one-minute challenge"
