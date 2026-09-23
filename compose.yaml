@@ -3,6 +3,8 @@ services:
     build:
       context: .
       target: runtime
+      args:
+        INSTALL_AI: "true"
     image: money-graph:local
     command: ["python", "pipeline.py", "--data", "/app/data", "--out", "/app/out"]
     volumes:
@@ -40,6 +42,8 @@ services:
     build:
       context: .
       target: test
+      args:
+        INSTALL_AI: "true"
     image: money-graph:test
     volumes:
       - ./data:/app/data:ro

@@ -267,11 +267,18 @@ def test_priority_contributions_sum_and_explain_largest_ranking_terms():
     result = score_priority(features, roles)
     contributions = result[[f"priority_{name}_contribution" for name in WEIGHTS]]
     np.testing.assert_allclose(contributions.sum(axis=1), result.priority_score, rtol=0, atol=1e-14)
+    # Independent expectations for the original fixed weights: presentation
+    # changes must not change priorities or the role supplied by the engine.
+    np.testing.assert_allclose(result.priority_score, [0.895, 0.4], rtol=0, atol=1e-14)
+    assert result.role.tolist() == ["transit", "peripheral"]
+    assert result.role_score.tolist() == [0.8, 0.0]
     reason = result.loc[0, "priority_explanation"]
-    assert "transit rule strength 0.80 (+0.200)" in reason
-    assert "reachable from 5 seeds (+0.200)" in reason
-    assert "path centrality at percentile 100.0 (+0.150)" in reason
-    assert "in_deg" not in reason and "betweenness" not in reason
+    assert reason == (
+        "It matches the transit review rule, with observed payments from 1 account and to 1 account. "
+        "It is reachable from 5 starting case accounts within four directed hops and "
+        "lies on shortest directed routes between other accounts in the observed graph."
+    )
+    assert all(term not in reason for term in ("in_deg", "betweenness", "percentile", "(+", "rule strength"))
     repeated = score_priority(features, roles)
     pd.testing.assert_frame_equal(result, repeated)
 
@@ -292,4 +299,136 @@ def test_priority_without_observations_explains_zero_honestly():
     roles = pd.DataFrame({"gid": [1], "role": ["peripheral"], "role_score": [0.0]})
     result = score_priority(features, roles).iloc[0]
     assert result.priority_score == 0
-    assert "no positive contribution" in result.priority_explanation
+    assert result.priority_explanation == "No observed signal raises this account's review priority above 0."
+
+
+def explain_single_priority_signal(**observations):
+    """Score one feature record without silently adding other ranking signals."""
+    frame = pd.DataFrame([{"gid": 1, "depth": 2, **observations}])
+    roles = pd.DataFrame({"gid": [1], "role": ["peripheral"], "role_score": [0.0]})
+    result = score_priority(frame, roles).iloc[0]
+    assert any(character.isdigit() for character in result.priority_explanation)
+    return result
+
+
+@pytest.mark.parametrize("observations,expected,score", [
+    ({"seed_reach_count": 9},
+     "It is reachable from 9 starting case accounts within four directed hops.", 0.20),
+    ({"betweenness": 0.2},
+     "It lies on shortest directed routes between other accounts in the observed graph. Its review priority is 0.150.", 0.15),
+    ({"pagerank": 0.2, "in_deg": 3},
+     "It has incoming links from 3 accounts that contribute to its network ranking.", 0.10),
+    ({"total_kzt": 123456.78},
+     "It has 123,456.78 KZT in combined observed incoming and outgoing transfers.", 0.10),
+    ({"cross_cluster_degree": 3},
+     "It has 3 directed relationships crossing community boundaries.", 0.10),
+    ({"peer_anomaly_score": 0.6},
+     "It differs in observed relationships, transfer counts or amounts from accounts at sampling depth 2.", 0.03),
+    ({"peer_anomaly_score": 0.6, "peer_anomaly_in_deg": 0.9,
+      "peer_anomaly_out_deg": 0.1, "in_deg": 12, "out_deg": 2},
+     "It has 12 incoming relationships, differing from accounts at sampling depth 2.", 0.03),
+])
+def test_priority_text_uses_actual_observations_without_arithmetic(observations, expected, score):
+    result = explain_single_priority_signal(**observations)
+    assert result.priority_explanation == expected
+    assert result.priority_score == pytest.approx(score)
+
+
+@pytest.mark.parametrize("observations,expected", [
+    ({"seed_reach_count": 1, "is_seed": True},
+     "It is a starting case account with 0 other starting accounts observed upstream within four hops."),
+    ({"seed_reach_count": 3, "is_seed": True},
+     "It is reachable from 2 accounts that started the case within four directed hops, in addition to reaching itself."),
+    ({"seed_reach_count": 0},
+     "It is reachable from 0 starting case accounts in the observed graph, but tied zero values still affect its rank."),
+    ({"betweenness": 0},
+     "It lies on 0 shortest routes between other accounts, but tied zero values still affect its rank."),
+    ({"pagerank": 0.2, "in_deg": 0},
+     "It has 0 observed incoming relationships, so its network ranking comes from the baseline."),
+    ({"cross_cluster_degree": 0},
+     "It has 0 relationships crossing community boundaries, but tied zero values still affect its rank."),
+])
+def test_relative_scores_do_not_invent_activity_or_other_seed_connections(observations, expected):
+    result = explain_single_priority_signal(**observations)
+    assert result.priority_score > 0
+    assert result.priority_explanation == expected
+
+
+@pytest.mark.parametrize("relay,same,flags,expected,score", [
+    (0.6, 0.2, {},
+     "It has outgoing activity on or up to two days after 60% of eligible incoming dates.", 0.03),
+    (0.2, 0.6, {},
+     "It sends 60% of its observed outgoing amount on dates with incoming activity.", 0.03),
+    (0.6, 0.6, {},
+     "It has outgoing activity on or up to two days after 60% of eligible incoming dates.", 0.03),
+    (1.0, 0.4, {"relay_2d_valid": False},
+     "It sends 40% of its observed outgoing amount on dates with incoming activity.", 0.02),
+    (0.4, 1.0, {"same_day_flow_valid": False},
+     "It has outgoing activity on or up to two days after 40% of eligible incoming dates.", 0.02),
+    (1.0, 1.0, {"depth": 4},
+     "No observed signal raises this account's review priority above 0.", 0.0),
+    (1.0, 1.0, {"is_seed": True},
+     "No observed signal raises this account's review priority above 0.", 0.0),
+])
+def test_temporal_priority_explanation_uses_the_selected_valid_denominator(relay, same, flags, expected, score):
+    result = explain_single_priority_signal(
+        relay_2d_ratio=relay, same_day_flow_ratio=same, **flags)
+    assert result.priority_explanation == expected
+    assert result.priority_score == pytest.approx(score)
+    assert all(term not in result.priority_explanation for term in ("same money", "passed on", "within hours"))
+
+
+@pytest.mark.parametrize("role,observations,expected", [
+    ("consolidator", {"in_deg": 8},
+     "It matches the collection review rule, with observed payments from 8 accounts."),
+    ("distributor", {"out_deg": 99},
+     "It matches the distribution review rule, with observed payments to 99 accounts."),
+    ("terminal", {"in_kzt": 10000, "out_kzt": 500.25},
+     "It matches the low-outgoing-flow review rule, with 500.25 KZT sent against 10,000 KZT received in the sample."),
+    ("coordinator", {"in_deg": 3, "out_deg": 4},
+     "It matches the coordination review rule across 7 observed directed relationships."),
+    ("peripheral", {},
+     "It partly matches a review rule, below the threshold for a stronger role. Its review priority is 0.100."),
+])
+def test_priority_role_support_is_readable_and_does_not_change_the_given_role(role, observations, expected):
+    frame = pd.DataFrame([{"gid": 1, **observations}])
+    strength = 0.4 if role == "peripheral" else 0.8
+    roles = pd.DataFrame({"gid": [1], "role": [role], "role_score": [strength]})
+    result = score_priority(frame, roles).iloc[0]
+    assert result.priority_explanation == expected
+    assert result.priority_score == pytest.approx(0.25 * strength)
+    assert result.role == role and result.role_score == strength
+
+
+def test_numeric_support_prefers_actual_relationships_to_score_only_fallback():
+    result = explain_single_priority_signal(betweenness=0.2, in_deg=4, out_deg=0)
+    assert result.priority_explanation == (
+        "It lies on shortest directed routes between other accounts in the observed graph. "
+        "It has 4 observed incoming and 0 outgoing relationships."
+    )
+    assert "0.150" not in result.priority_explanation
+
+
+def test_supplied_pipeline_validates_numeric_priority_reasons_for_every_node(tmp_path):
+    """Catch all-node explanation failures before the viewer's shared setup runs."""
+    from pathlib import Path
+
+    import pipeline
+
+    data = Path(__file__).resolve().parents[1] / "data"
+    output = tmp_path / "out"
+    counts = pipeline.run(data, output)
+    assert counts["nodes_roles"] == counts["node_features"] == 2248
+    rich = pd.read_parquet(output / "node_features.parquet")
+    assert rich.priority_explanation.str.contains(r"\d").all()
+    isolates = rich.loc[rich.in_deg.eq(0) & rich.out_deg.eq(0)]
+    assert len(isolates) == 19
+    assert isolates.priority_explanation.str.contains("0 other starting accounts", regex=False).all()
+    assert isolates.priority_explanation.str.contains("0 relationships crossing", regex=False).all()
+    top = pd.read_csv(output / "top_nodes.csv", dtype={"gid": "int64"})
+    assert top.why.str.contains(r"\d").all()
+    reasons = rich.set_index("gid").priority_explanation
+    assert top.why.tolist() == reasons.loc[top.gid].tolist()
+    assert pipeline.validate_artifacts(
+        output, pd.read_parquet(data / "nodes.parquet"), pd.read_parquet(data / "edges.parquet")
+    ) == counts

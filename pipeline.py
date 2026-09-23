@@ -89,9 +89,9 @@ def _source_versions() -> dict:
     names = ("src/schema.py", "src/loader.py", "src/graph_features.py", "src/temporal.py",
              "src/clustering.py", "src/roles.py", "src/priority.py", "src/explanations.py",
              "src/exports.py", "src/resilience.py", "validate_submission.py", "pipeline.py",
-             "main.py", "app.py", "src/workspace.py", "src/ai_assistant.py",
+             "main.py", "app.py", "src/workspace.py", "src/ai_assistant.py", "src/config.py",
              "documentation/feature-contract.md", "documentation/data-quality.md",
-             "documentation/decision-rules.md", "requirements.txt", "requirements-dev.txt",
+             "documentation/decision-rules.md", "requirements.txt", "requirements-dev.txt", "requirements-ai.txt",
              "constraints.txt")
     return {name: "sha256:" + file_hash(ROOT / name) for name in names if (ROOT / name).is_file()}
 

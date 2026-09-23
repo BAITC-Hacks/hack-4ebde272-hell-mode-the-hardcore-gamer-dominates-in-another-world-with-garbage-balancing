@@ -23,6 +23,15 @@ the merged baseline; this record covers the final workflow improvements.
 - Optional AI graph tools use deterministic tie ordering, and transfer-amount
   citations identify the exact directed edge. Claims still require matching
   scalar values from actual tool results.
+- The queue's **Why** column uses the exact published `top_nodes.csv.why`
+  wording, with a full-text view for its selected account. Other accounts use
+  the full-run priority reason. Role evidence and group hypotheses now explain
+  measured observations in everyday language, retaining the 200-character node
+  limit and all observation warnings. Numerical decisions and ranks are unchanged.
+- The AI panel reads a private local `.env` and stays usable as a setup form
+  while the key is blank. Compose includes the SDK; tests exercise the actual
+  SDK using an in-memory HTTP transport, including authentication/quota/service
+  errors, without external requests or a real credential.
 - README, architecture and the five-minute demo now follow the complete analyst
   path. The demo starts with an actual live calculation and includes three real
   cases, an arbitrary-gid challenge, and the final review/export handoff.
@@ -59,9 +68,11 @@ This maps evidence to the rubric; it does not predict the jury's score.
 
 ## Verification commands
 
-**510 tests passed in 93.31 seconds**, with no failures or skips, under the pinned
+**604 tests passed in 104.23 seconds**, with no failures or skips, under the pinned
 Python 3.11 Docker test environment with runtime networking disabled. The final
-browser test completed in 26.41 seconds. Sources were mounted read-only.
+browser test completed in 27.43 seconds. Sources were mounted read-only. The
+installed OpenAI SDK was exercised through in-memory HTTP responses; no live
+API request was made. All 2,248 node explanations fit in 183 characters or fewer.
 
 ```bash
 docker compose --profile test build analytics tests
@@ -76,9 +87,10 @@ Final full-suite results and clean-release timing are recorded in
 [submission/RELEASE.md](../submission/RELEASE.md). The expanded real Chromium
 rehearsal passed with all seven pages, executing graph canvases, regeneration,
 review selection/download, upload/run, submission download, malformed replacement
-preservation and return to configured data. Its measured upload-to-verified-viewer
+preservation and return to configured data. The earlier baseline upload-to-verified-viewer
 step was **6.10 seconds**; three arbitrary-gid cards took **0.99 seconds** in that
-focused rehearsal. No external asset requests were observed.
+focused rehearsal. The current full workflow is reverified above; no external
+asset requests were observed.
 
 Exact-value fixtures cover seed and hop-4 masks, month-end temporal windows,
 multiple-seed reachability, four-versus-five hops, isolates, SCCs/reciprocity,

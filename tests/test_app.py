@@ -35,10 +35,11 @@ def exports(tmp_path_factory):
 
 
 @pytest.fixture
-def ui(exports, monkeypatch):
+def ui(exports, monkeypatch, tmp_path):
     monkeypatch.setenv("MONEY_GRAPH_OUTPUT_DIR", str(exports))
     monkeypatch.setenv("MONEY_GRAPH_DATA_DIR", str(ROOT / "data"))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("src.config.DEFAULT_ENV_PATH", tmp_path / ".env")
     return AppTest.from_file(str(ROOT / "app.py"), default_timeout=30).run()
 
 
@@ -89,6 +90,44 @@ def test_queue_covers_every_node_and_filters(ui, exports):
     assert ui.dataframe[0].value.empty
     assert not any(item.label == "Open node card" for item in ui.button)
     assert not ui.exception
+
+
+def test_queue_why_uses_published_top_reasons_before_feature_fallback(small_export):
+    from app import priority_table
+    out, source, gids = small_export
+    data = load_data(str(out), str(source))
+    nodes = merged_nodes(data)
+    nodes["priority_explanation"] = "Different rich-artifact wording"
+    nodes["why"] = "Stale joined wording"
+    data.top_nodes = data.top_nodes.head(2).copy()
+    table = priority_table(data, nodes)
+    queue = queue_view(table).set_index("gid")
+    assert queue.loc[gids[0], "why"] == "Ranking one"
+    assert queue.loc[gids[1], "why"] == "Ranking two"
+    assert queue.loc[gids[2], "why"] == "Different rich-artifact wording"
+
+
+def test_queue_why_falls_back_for_blank_or_missing_text():
+    frame = pd.DataFrame({"gid": [1, 2, 3, 4], "why": ["Published reason", " ", None, None],
+        "priority_explanation": ["Other reason", "Full-run reason", "", None],
+        "evidence": ["Evidence", "Evidence", "Observed fallback", None]})
+    assert queue_view(frame).why.tolist() == ["Published reason", "Full-run reason",
+        "Observed fallback", "No review reason was exported for this account."]
+
+
+def test_queue_displays_published_reason_in_full(ui, exports):
+    page(ui, "Investigation queue")
+    expected = pd.read_csv(exports / "top_nodes.csv", dtype={"gid": "string"}).iloc[0]
+    assert ui.dataframe[0].value.iloc[0]["why"] == expected["why"]
+    assert any(item.value == expected["why"] for item in ui.markdown)
+
+
+def test_ai_empty_key_shows_setup_and_disabled_form(ui):
+    page(ui, "AI analyst")
+    assert any(".env" in item.value for item in ui.info)
+    assert ui.text_area[0].label == "Ask about exported evidence"
+    assert button(ui, "Ask grounded assistant").disabled
+    assert any("--no-deps --force-recreate app" in item.value for item in ui.code)
 
 
 def test_queue_navigation_updates_card_and_selected_id(ui):

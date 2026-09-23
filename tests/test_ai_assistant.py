@@ -13,6 +13,14 @@ from src.ai_assistant import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_ai_configuration(monkeypatch, tmp_path):
+    """Use a fake local credential only; never depend on a developer's .env."""
+    monkeypatch.setattr("src.config.DEFAULT_ENV_PATH", tmp_path / ".env")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key-for-mocked-tests")
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+
+
 @pytest.fixture
 def tools():
     # Adjacent integers above JavaScript's safe integer limit must stay distinct.
@@ -109,7 +117,7 @@ def claim(path, value, source_id="S1"):
 def install_mock(monkeypatch, *messages):
     client = MagicMock()
     client.chat.completions.create.side_effect = [SimpleNamespace(choices=[SimpleNamespace(message=m)]) for m in messages]
-    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=lambda **kwargs: client))
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=MagicMock(return_value=client)))
     return client
 
 
@@ -301,3 +309,48 @@ def test_tool_limit_is_bounded_without_returning_unverified_claims(tools, monkey
     assert "tool-call limit" in result.text
     assert client.chat.completions.create.call_count == 6
     assert not result.node_gids
+
+
+def test_ai_client_uses_explicit_configured_key_and_model(tools, monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=file-fake-key\nOPENAI_MODEL=file-test-model\n")
+    client = install_mock(monkeypatch, message(content="No evidence"))
+    answer_question_result("Explain", tools)
+    sys.modules["openai"].OpenAI.assert_called_once_with(api_key="file-fake-key", timeout=30.0, max_retries=1)
+    assert client.chat.completions.create.call_args.kwargs["model"] == "file-test-model"
+    assert "file-fake-key" not in json.dumps(client.chat.completions.create.call_args.kwargs["messages"])
+
+
+def test_explicit_model_override_preserves_configured_client_key(tools, monkeypatch):
+    monkeypatch.setenv("OPENAI_MODEL", "configured-model")
+    client = install_mock(monkeypatch, message(content="No evidence"))
+    answer_question_result("Explain", tools, model="requested-model")
+    assert client.chat.completions.create.call_args.kwargs["model"] == "requested-model"
+    assert sys.modules["openai"].OpenAI.call_args.kwargs["api_key"] == "fake-key-for-mocked-tests"
+
+
+def test_blank_key_is_rejected_before_api_client_creation(tools, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "   ")
+    client = install_mock(monkeypatch)
+    with pytest.raises(RuntimeError, match="Configure OPENAI_API_KEY.*.env"):
+        answer_question_result("Explain", tools)
+    sys.modules["openai"].OpenAI.assert_not_called()
+    client.chat.completions.create.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", ["constructor", "request"])
+def test_api_errors_are_redacted_before_reaching_ui(tools, monkeypatch, failure, capsys):
+    secret = "private-fake-key-that-must-not-be-displayed"
+    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    client = install_mock(monkeypatch)
+    if failure == "constructor":
+        sys.modules["openai"].OpenAI.side_effect = RuntimeError(f"Invalid credential {secret}")
+    else:
+        client.chat.completions.create.side_effect = RuntimeError(f"Unauthorized request with {secret}")
+    with pytest.raises(RuntimeError) as caught:
+        answer_question_result("Explain", tools)
+    assert secret not in str(caught.value)
+    assert caught.value.__suppress_context__
+    assert "Check" in str(caught.value)
+    captured = capsys.readouterr()
+    assert secret not in captured.out + captured.err

@@ -42,8 +42,22 @@ files on rerun; use **Reload data** to load the newly published run immediately.
 During publication, incomplete or mismatched outputs are rejected. Stop services
 with `docker compose down`; host output files remain available.
 
-The optional AI build is `docker compose build --build-arg INSTALL_AI=true`;
-set `OPENAI_API_KEY` locally and recreate the app. Never commit secrets.
+Compose installs the optional OpenAI SDK so the AI panel is ready for a key.
+The analytical pipeline and all other pages still run locally without one.
+Copy `.env.example` to `.env` if the local file does not exist. Fill in its empty
+`OPENAI_API_KEY=` entry; `OPENAI_MODEL=gpt-4o-mini` is configurable. The key stays
+server-side. After saving, recreate the Docker app to load the new environment:
+
+```bash
+docker compose up -d --no-deps --force-recreate app
+```
+
+For native Python, install `python -m pip install -r requirements-ai.txt`; the
+app reads `.env` on each rerun, so reload the page after saving the key. Nonempty
+process environment variables take precedence over the local file. The setup
+uses the [official OpenAI SDK and API-key environment convention](https://developers.openai.com/api/docs/quickstart).
+Calls occur only after **Ask grounded assistant** is clicked. The form remains
+visible with its action disabled while the key is empty. Never commit secrets.
 Git and Docker exclusions both cover Streamlit secrets, dotenv files, credential
 directories and key/certificate files.
 
@@ -74,7 +88,7 @@ See [DEMO.md](DEMO.md) for exact examples and the release verification record
 under `submission/` for tested commands, runtime and integration limitations.
 The [integration verification report](documentation/integration-verification.md)
 records the merged baseline. The latest [final acceptance record](documentation/final-acceptance.md)
-covers the completed analyst workflow, **510 passing tests** and presentation/LLM limits.
+covers the completed analyst workflow, **604 passing tests** and presentation/LLM limits.
 
 ## Investigation workflow
 
@@ -114,6 +128,9 @@ The **Investigation queue** covers every supplied gid and filters role, cluster,
 depth, seed status and priority. Open a **Node card** to inspect role evidence,
 score contributions, flow metrics and the next data request. Search accepts any
 exact supplied gid, including isolated seeds.
+The **Why** column copies the published `top_nodes.csv.why` text for its ranked
+accounts. Other accounts show their exported full-run priority explanation.
+The selected row's complete reason is also displayed below the table.
 
 **Network explorer** defaults to a small neighborhood. Arrows show payment
 direction, edge width scales logarithmically with KZT, and hover carries amount
@@ -332,8 +349,10 @@ The assistant uses deterministic node/top/cluster/counterparty/path/comparison
 tools. Returned factual claims and node links are validated against cited tool
 results; arbitrary prose is not accepted as verified evidence. Missing nodes,
 tool failures and unsupported claims are tested with mocks. Live API responses
-remain unverified without an approved API key. Enabling AI sends the question
-and bounded tool results to the configured provider; the core viewer stays local.
+remain unverified without your API key. The installed SDK is also tested with
+in-memory HTTP responses for cited tool calls and safe error handling. Clicking
+**Ask grounded assistant** sends the question and bounded tool results to OpenAI;
+the core viewer stays local.
 
 ## Toward one million nodes
 

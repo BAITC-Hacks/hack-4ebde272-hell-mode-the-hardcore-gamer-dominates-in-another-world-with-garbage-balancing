@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
 from collections import deque
 from dataclasses import dataclass
@@ -18,6 +17,8 @@ from typing import Any, Callable
 
 import networkx as nx
 import pandas as pd
+
+from src.config import get_ai_settings
 
 
 SYSTEM_PROMPT = """You are an AML investigation assistant for a sampled directed
@@ -421,13 +422,19 @@ def answer_question_result(question: str, tools: GraphInvestigationTools, model:
     The OpenAI import is deliberately local so missing optional dependencies never
     affect the Streamlit application.
     """
+    settings = get_ai_settings()
+    if not settings.api_key:
+        raise RuntimeError("Configure OPENAI_API_KEY in the project's .env file or process environment to use AI Analyst.")
     try:
         from openai import OpenAI
     except ImportError as exc:
         raise RuntimeError("Install the optional `openai` package to use AI Analyst.") from exc
 
-    client = OpenAI(timeout=30.0, max_retries=1)
-    model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    try:
+        client = OpenAI(api_key=settings.api_key, timeout=30.0, max_retries=1)
+    except Exception:
+        raise RuntimeError("AI Analyst could not initialize its API client. Check the configured API key and OpenAI installation.") from None
+    model = model or settings.model
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": question},
@@ -440,10 +447,13 @@ def answer_question_result(question: str, tools: GraphInvestigationTools, model:
     }
     ledger: dict[str, dict[str, Any]] = {}
     for _ in range(6):
-        response = client.chat.completions.create(
-            model=model, messages=messages, tools=TOOL_SPECS,
-            tool_choice="auto" if ledger else "required", response_format=ANSWER_FORMAT,
-        )
+        try:
+            response = client.chat.completions.create(
+                model=model, messages=messages, tools=TOOL_SPECS,
+                tool_choice="auto" if ledger else "required", response_format=ANSWER_FORMAT,
+            )
+        except Exception:
+            raise RuntimeError("AI request failed. Check the API key, model access, quota and network connection.") from None
         message = response.choices[0].message
         messages.append(message.model_dump(exclude_none=True))
         if not message.tool_calls:

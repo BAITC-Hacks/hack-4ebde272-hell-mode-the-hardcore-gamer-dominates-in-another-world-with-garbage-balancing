@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from numbers import Integral
 
 import pandas as pd
 
@@ -9,6 +10,8 @@ from .roles import ratio_validity_flags
 
 
 def _number(value, digits=2) -> str:
+    if digits == 0 and isinstance(value, Integral) and not isinstance(value, bool):
+        return f"{int(value):,}"
     try:
         value = float(value)
     except (TypeError, ValueError):
@@ -25,10 +28,15 @@ def _amount(value) -> str:
         return "unavailable"
     if not math.isfinite(value):
         return "unavailable"
-    for divisor, suffix in ((1e9, " billion"), (1e6, " million"), (1e3, " thousand")):
-        if abs(value) >= divisor:
-            return f"{value / divisor:.3g}{suffix} KZT"
-    return f"{value:,.2f} KZT"
+    if abs(value) >= 1e15:
+        return f"about {value:.3g} KZT"
+    return f"{value:,.2f}".rstrip("0").rstrip(".") + " KZT"
+
+
+def _counted(value, noun: str) -> str:
+    """Format a measured count with a grammatical singular/plural label."""
+    singular = _finite(value) and float(value) == 1
+    return f"{_number(value, 0)} {noun if singular else noun + 's'}"
 
 
 def _flag(row, name) -> bool:
@@ -59,71 +67,109 @@ def _ratio(row, name) -> float:
     return float(value) if _finite(value) and float(value) >= 0 else float("nan")
 
 
-def _bounded(body: str, warnings: list[str]) -> str:
-    suffix = " ".join(warnings)
-    budget = 200 - len(suffix) - (1 if suffix else 0)
-    if len(body) > budget:
-        body = body[:budget - 1].rsplit(" ", 1)[0].rstrip(" ,;.") + "."
-    return body + (" " + suffix if suffix else "")
+def _bounded(alternatives: list[str], warning: str) -> str:
+    """Choose a complete explanation; never slice a sentence or numeric value."""
+    fallback = "Observed metrics are insufficient to explain the role; the support cutoff is 0.55."
+    for body in (*alternatives, fallback):
+        result = body + (" " + warning if warning else "")
+        if len(result) <= 200:
+            return result
+    raise ValueError("Observation warning exceeds the evidence character budget")
+
+
+def _top_rank(value: float) -> str:
+    """Translate a percentile to a short relative-rank phrase without jargon."""
+    if value >= 1:
+        return "rank 1"
+    # Keep a nonzero top-share label even when a value is very close to 1.
+    share = max(0.1, (1.0 - value) * 100)
+    return f"top {share:.1f}".rstrip("0").rstrip(".") + "%"
 
 
 def evidence_for(row: pd.Series) -> str:
-    """Explain the assigned role first; append censoring without hiding it."""
+    """Explain a role in everyday language, with complete text <=200 characters.
+
+    Counts/amounts describe this sample. Initial case accounts are the supplied
+    seeds. Shorter complete alternatives reserve room for mandatory observation
+    warnings; detailed gates and components remain in the auxiliary artifact.
+    """
     role = str(row.get("role", "peripheral"))
     depth = row.get("depth")
     boundary = (_finite(depth) and float(depth) >= 4) or _flag(row, "boundary_censored") or _flag(row, "truncated_by_depth")
     seed = _flag(row, "is_seed")
-    incoming = _number(row.get("in_deg"), 0)
-    outgoing = _number(row.get("out_deg"), 0)
-    seed_reach = _number(row.get("seed_reach_count"), 0)
-    warnings = []
-    if boundary:
-        warnings.append("Beyond hop 4: activity unobserved.")
-    if seed:
-        warnings.append("Seed inflows incomplete.")
+    senders = _counted(row.get("in_deg"), "sender")
+    recipients = _counted(row.get("out_deg"), "recipient")
+    seed_sources = _counted(row.get("seed_reach_count"), "initial case account")
+    if seed and _finite(row.get("seed_reach_count")) and float(row["seed_reach_count"]) >= 1:
+        seed_sources += " (including itself)"
+    if seed and boundary:
+        warning = "Initial case account: inflows are incomplete; outgoing transfers beyond hop 4 are unobserved."
+    elif seed:
+        warning = "Initial case account; incoming transfers are incomplete."
+    elif boundary:
+        warning = "Outgoing transfers beyond hop 4 are unobserved."
+    else:
+        warning = ""
+
+    if not any(_finite(row.get(name)) for name in ("in_deg", "out_deg", "in_kzt", "out_kzt")):
+        return _bounded(["Activity counts are unavailable; no role can be explained against the 0.55 support cutoff."], warning)
 
     if role == "consolidator":
-        body = (f"Collection pattern: {incoming} incoming counterparties; "
-                f"{_amount(row.get('in_kzt'))} received; reachable from {seed_reach} seeds.")
+        collection = f"Received {_amount(row.get('in_kzt'))} from {senders}; a possible collection point."
+        alternatives = []
+        if _finite(row.get("in_kzt")):
+            if _finite(row.get("seed_reach_count")):
+                alternatives.append(collection + f" Reachable from {seed_sources}.")
+            alternatives.append(collection)
+        alternatives.append(f"Receives from {senders}; a possible collection point.")
     elif role == "distributor":
-        body = (f"Distribution pattern: {outgoing} outgoing counterparties; "
-                f"{_number(row.get('out_tx'), 0)} transfers; {_amount(row.get('out_kzt'))} sent; "
-                f"{_number(row.get('cross_cluster_out_deg'), 0)} links cross communities.")
+        transfers = _counted(row.get("out_tx"), "transfer")
+        alternatives = [
+            f"Sent {_amount(row.get('out_kzt'))} to {recipients} in {transfers}, suggesting a distribution role.",
+            f"Sent funds to {recipients} in {transfers}; a possible distributor.",
+            f"Sent funds to {recipients}; a possible distributor.",
+        ]
     elif role == "coordinator":
-        signals = [("seed reach", "seed_reach_count"), ("path bridging", "betweenness"),
-                   ("network influence", "pagerank"), ("community links", "cross_cluster_degree")]
-        ranked = sorted(enumerate(signals), key=lambda item: (
-            -(_percentile(row, item[1][1]) if _finite(_percentile(row, item[1][1])) else -1), item[0]))
-        strongest = [f"{label} at {_number(_percentile(row, name) * 100, 0)}th percentile"
-                     for _, (label, name) in ranked[:2] if _finite(_percentile(row, name))]
-        body = f"Coordination pattern: reachable from {seed_reach} seeds; " + "; ".join(strongest) + "."
-        if not strongest:
-            body = (f"Coordination hypothesis: {seed_reach} seed routes, "
-                    f"{_number(row.get('cross_cluster_degree'), 0)} cross-community links; percentiles unavailable.")
+        phrases = {
+            "seed_reach_count": f"reachable from {seed_sources}",
+            "betweenness": f"{_top_rank(_percentile(row, 'betweenness'))} for linking payment paths",
+            "pagerank": f"{_top_rank(_percentile(row, 'pagerank'))} for network importance",
+            "cross_cluster_degree": f"{_number(row.get('cross_cluster_degree'), 0)} payment links to other groups",
+        }
+        ranked = sorted(enumerate(phrases), key=lambda item: (
+            -(_percentile(row, item[1]) if _finite(_percentile(row, item[1])) else -1), item[0]))
+        strongest = [phrases[name] for _, name in ranked if _finite(_percentile(row, name))][:2]
+        alternatives = []
+        if strongest:
+            alternatives.append("Possible coordinating account: " + "; ".join(strongest) + ".")
+        alternatives.extend([
+            f"Reachable from {seed_sources}, with {_number(row.get('cross_cluster_degree'), 0)} links to other groups; review for a coordinating role.",
+            f"Has {senders} and {recipients}; review for a possible coordinating role.",
+        ])
     elif role == "transit":
-        ratio = _ratio(row, "pass_through")
-        relay = _ratio(row, "relay_2d_ratio")
-        body = f"Relay pattern: {incoming} incoming, {outgoing} outgoing counterparties; "
-        if not (seed or boundary) and _finite(ratio):
-            body += f"observed outflow/inflow={_number(ratio)}; "
-        if not (seed or boundary) and _finite(relay):
-            body += f"2-day date overlap={_number(float(relay) * 100, 0)}% (date-only)."
-        else:
-            body += "2-day timing unavailable."
+        ratio = _ratio(row, "pass_through") if not (seed or boundary) else float("nan")
+        relay = _ratio(row, "relay_2d_ratio") if not (seed or boundary) else float("nan")
+        alternatives = []
+        if _finite(relay):
+            timing = f"outgoing activity occurs on or up to 2 days after {_number(relay * 100, 0)}% of eligible incoming dates"
+            if _finite(ratio):
+                alternatives.append(f"Outgoing amount is {_number(ratio * 100, 0)}% of incoming amount; {timing}. Dates cannot prove order or trace funds.")
+            alternatives.append(timing.capitalize() + ", suggesting a relay role. Dates cannot prove order or trace funds.")
+        elif _finite(ratio):
+            alternatives.append(f"Outgoing amount is {_number(ratio * 100, 0)}% of incoming amount, consistent with a relay role. Two-day timing is unavailable.")
+        alternatives.append(f"Observed {senders} and {recipients}; two-day timing is unavailable.")
     elif role == "terminal":
-        body = (f"Observed endpoint: {incoming} incoming counterparties; "
-                f"{_amount(row.get('in_kzt'))} received, {_amount(row.get('out_kzt'))} sent "
-                f"at hop {_number(depth, 0)}. Sample only; not an account balance.")
+        alternatives = [
+            f"Received {_amount(row.get('in_kzt'))} and sent {_amount(row.get('out_kzt'))} in this sample, suggesting an endpoint. This is not a full account balance.",
+            f"Receives from {senders} with little observed onward flow. Full account balance is unknown.",
+        ]
     else:
         in_value, out_value = row.get("in_deg"), row.get("out_deg")
         if _finite(in_value) and _finite(out_value) and float(in_value) == 0 and float(out_value) == 0:
-            body = "Peripheral: 0 incoming and 0 outgoing counterparties observed; no structural role qualifies."
+            alternatives = ["No transfers observed (0 incoming, 0 outgoing); there is too little evidence for a specific role."]
         else:
-            body = (f"Peripheral: {incoming} incoming, {outgoing} outgoing counterparties; "
-                    "no role meets eligibility and strength >=0.55.")
-    if not any(char.isdigit() for char in body):
-        body += " Rule threshold=0.55."
-    return _bounded(body, warnings)
+            alternatives = [f"Observed {senders} and {recipients}; no specific role has enough support."]
+    return _bounded(alternatives, warning)
 
 
 def add_evidence(frame: pd.DataFrame) -> pd.DataFrame:

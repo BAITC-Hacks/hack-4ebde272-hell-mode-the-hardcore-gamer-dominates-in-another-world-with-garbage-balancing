@@ -83,7 +83,7 @@ formula only if the jury asks how the score was calculated.
 
 ### 1. Collection candidate
 
-Exact evidence: `Collection pattern: 8 incoming counterparties; 2.16 million KZT received; reachable from 9 seeds.`
+Exact evidence: `Received 2,160,500 KZT from 8 senders; a possible collection point. Reachable from 9 initial case accounts.`
 
 The structural gate requires at least two incoming counterparties and either at
 least two upstream seeds or incoming-degree percentile at least 0.80. The observed
@@ -93,13 +93,14 @@ least two upstream seeds or incoming-degree percentile at least 0.80. The observ
 The three largest priority contributions are role strength **+0.242605**, seed
 reach **+0.199689**, and path centrality **+0.141793**. The observed retained share
 is 0.760704; it describes the sample, not a verified balance. Cluster 14's exact
-internal turnover is **6,244,622 KZT**; its hypothesis is “collection-oriented
-structure.” Request a longer history and timestamped adjacent flows to assess
+internal turnover is **6,244,622 KZT**. Its hypothesis is: “Possible collection
+group: its 54 accounts have 91 incoming and 71 outgoing payment links. Internal
+transfers total 6,244,622 KZT; full account balances remain unknown.” Request a longer history and timestamped adjacent flows to assess
 whether the collection pattern persists.
 
 ### 2. Distribution candidate
 
-Exact evidence: `Distribution pattern: 99 outgoing counterparties; 126 transfers; 23 million KZT sent; 25 links cross communities.`
+Exact evidence: `Sent 23,001,375 KZT to 99 recipients in 126 transfers, suggesting a distribution role.`
 
 The distribution gate requires at least two outgoing counterparties; 99 qualifies,
 and weighted strength 0.994747 clears 0.55. Of its observed outgoing relationships,
@@ -113,7 +114,7 @@ it does not establish intraday order or forwarding of the same money.
 
 ### 3. Boundary collection candidate
 
-Exact evidence: `Collection pattern: 3 incoming counterparties; 555 thousand KZT received; reachable from 2 seeds. Beyond hop 4: activity unobserved.`
+Exact evidence: `Received 555,000 KZT from 3 senders; a possible collection point. Reachable from 2 initial case accounts. Outgoing transfers beyond hop 4 are unobserved.`
 
 Three incoming counterparties and two upstream seeds satisfy the collection gate.
 Retained share is unavailable, so the score uses available weight **0.90**; the
@@ -170,7 +171,7 @@ All six role labels occur. All 19 isolated seeds have peripheral strength zero;
 no hop-4 node is assigned terminal. The top-list `why` explains priority separately
 from the role's short `evidence`. For the collection candidate it is:
 
-> Review priority 0.974: consolidator rule strength 0.97 (+0.243); reachable from 9 seeds (+0.200); path centrality at percentile 94.5 (+0.142).
+> It matches the collection review rule, with observed payments from 8 accounts. It is reachable from 9 starting case accounts within four directed hops and lies on shortest directed routes between other accounts in the observed graph.
 
 The automated browser rehearsal exercises connected, boundary and isolated gids,
 role evidence, graph canvases, page navigation and regeneration/reload with external

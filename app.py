@@ -434,9 +434,11 @@ def priority_table(data: InvestigationData, nodes: pd.DataFrame) -> pd.DataFrame
     enrich = [c for c in nodes.columns if c != "gid" and c not in table.columns]
     if enrich:
         table = table.merge(nodes[["gid", *enrich]], on="gid", how="left")
-    if "why" in data.top_nodes and "gid" in data.top_nodes and "why" not in table:
+    if "why" in data.top_nodes and "gid" in data.top_nodes:
         reasons = data.top_nodes[["gid", "why"]].copy()
         reasons["gid"] = exact_ids(reasons["gid"], "top_nodes.gid")
+        # The published top-list wording is authoritative for its ranked gids.
+        table = table.drop(columns="why", errors="ignore")
         table = table.merge(reasons, on="gid", how="left", validate="one_to_one")
     score = first_column(table, "priority_score", "priority")
     if score is None:
@@ -457,10 +459,13 @@ def column_or_default(frame: pd.DataFrame, candidates: Iterable[str], default: o
 
 
 def queue_view(table: pd.DataFrame) -> pd.DataFrame:
-    reasons = column_or_default(table, ["priority_explanation", "why", "evidence"])
-    for name in ("why", "evidence"):
+    """Show top_nodes.csv reasons first; other accounts use their full-run reason."""
+    reasons = pd.Series(pd.NA, index=table.index, dtype="string")
+    for name in ("why", "priority_explanation", "evidence"):
         if name in table:
-            reasons = reasons.fillna(table[name])
+            candidate = table[name].astype("string")
+            reasons = reasons.fillna(candidate.mask(candidate.str.strip().eq("")))
+    reasons = reasons.fillna("No review reason was exported for this account.")
     queue = pd.DataFrame({
         "rank": column_or_default(table, ["rank"]),
         "gid": column_or_default(table, ["gid"]),
@@ -558,12 +563,16 @@ def queue_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     display = filtered.copy()
     display["turnover_kzt"] = display["turnover_kzt"].map(lambda x: fmt_kzt(x) if x != MISSING else MISSING)
     st.dataframe(display_frame(display[["rank", "gid", "role", "priority_score", "cluster", "seed_reach", "turnover_kzt", "why"]]),
-                 width="stretch", hide_index=True, height=440)
+                 width="stretch", hide_index=True, height=440,
+                 column_config={"why": st.column_config.TextColumn("Why", width="large",
+                     help="Published top_nodes.csv reason for ranked accounts; the exported priority explanation for other accounts.")})
     render_review_shortlist(data, nodes, queue)
     if filtered.empty:
         return
     option_map = {f"#{row.rank} · gid {row.gid} · {row.role}": int(row.gid) for row in filtered.itertuples()}
     chosen = st.selectbox("Open selected queue row", list(option_map), key="queue_selection")
+    st.markdown("**Why review this account**")
+    st.write(filtered.loc[filtered["gid"].eq(option_map[chosen]), "why"].iloc[0])
     if st.button("Open node card", type="primary"):
         nav_to_node(option_map[chosen])
         st.rerun()
@@ -1067,14 +1076,22 @@ def resilience_page(data: InvestigationData) -> None:
 
 
 def ai_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
+    from src.config import get_ai_settings
+
+    settings = get_ai_settings()
     st.title("Optional AI analyst")
-    st.caption("Available only with `OPENAI_API_KEY`. It can explain deterministic tool results; it cannot create graph facts or make guilt claims.")
-    if not os.getenv("OPENAI_API_KEY"):
-        st.info("Core investigation features work without an API key. Set `OPENAI_API_KEY` to enable this optional panel.")
-        return
+    st.caption("Ask about accounts, transfers and communities. Answers cite verified graph evidence and link to the accounts discussed.")
+    if not settings.api_key:
+        st.info("Core investigation features work without an API key. To enable AI, fill OPENAI_API_KEY in the local .env file. The key has been left empty for you.")
+        st.code("OPENAI_API_KEY=\nOPENAI_MODEL=gpt-4o-mini", language="dotenv")
+        st.caption("Docker: after saving .env, run the command below. Native Streamlit: reload this page after saving.")
+        st.code("docker compose up -d --no-deps --force-recreate app", language="bash")
+    else:
+        st.caption(f"API key configured · model: {settings.model}. Requests are sent only when you click Ask grounded assistant.")
+    st.caption("The assistant explains observed evidence; it cannot establish guilt or reconstruct missing transfers. Asking sends your question and the needed graph-tool results to OpenAI.")
     question = st.text_area("Ask about exported evidence", placeholder="Compare gid 101 and gid 202, then explain what to review next.", key="ai_question")
     context = run_context(data)
-    if st.button("Ask grounded assistant", type="primary", disabled=not question.strip()):
+    if st.button("Ask grounded assistant", type="primary", disabled=not question.strip() or not settings.api_key):
         st.session_state.pop("grounded_answer", None)
         try:
             from src.ai_assistant import GraphInvestigationTools, answer_question_result

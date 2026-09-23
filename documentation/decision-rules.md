@@ -46,6 +46,20 @@ adds the short role explanation. `cluster_graph(graph, nodes)` still returns
 assignments and community metadata. `resilience_analysis(graph, features)` keeps
 the baseline and top-1/5/10/20 removals.
 
+Short role evidence uses complete everyday sentences: observed senders,
+recipients and KZT amounts, or a direct comparison of observed incoming and
+outgoing amounts. "Initial case accounts" means the supplied seeds, without
+implying anything about identity or guilt. When one of those accounts' seed-reach
+counts is shown, text says it includes itself through the zero-hop path.
+Coordinating-account evidence names
+its two strongest structural signals using counts or short relative-rank
+phrases such as "top 1% for linking payment paths"; full thresholds remain in
+`role_rule_details`. Relay text explicitly names eligible incoming dates and
+states that dates cannot prove payment order or trace funds. Seed and hop-4
+warnings stay attached. Whole authored alternatives fit the 200-character
+limit; text and numeric values are never cut mid-sentence. Displayed KZT amounts
+use at most two decimal places; exact computation values remain in the features.
+
 The validator retains existing callers and adds optional raw-edge reconciliation.
 Its CLI accepts `--data` for source nodes/edges. Use raw input reconciliation for
 final acceptance. Member 3 owns pipeline orchestration, run metadata, dependency
@@ -186,12 +200,16 @@ plus outgoing turnover is an activity measure and may count an internal transfer
 at both endpoints; it is not a balance. A percentile of observed zero can be
 positive because tied ranks are relative to this dataset.
 
-`priority_explanation` names the three largest positive additive contributions,
-their actual values/percentiles, and their added score points. Equal contributions
-use table order above. `top_nodes.why` copies this ranking explanation, independently
-of `evidence`, which explains the assigned role. If no contribution is positive,
-the reason explicitly says so. Optional new routes, motifs or anomalies remain
-available in Parquet and have no scoring effect unless formulas and tests change.
+`priority_explanation` translates the three largest positive contributions into
+plain observed reasons, such as numbers of senders, recipients, starting case
+accounts or payment links. It does not repeat the score arithmetic or added-score
+points; those remain inspectable in the separate numeric contribution fields.
+Equal contributions use table order above. `top_nodes.why` copies this ranking
+explanation, independently of `evidence`, which explains the assigned role.
+Reasons distinguish missing observations and tied-zero ranking effects from
+positive observed activity. If no contribution is positive, the reason explicitly
+says so. Optional new routes, motifs or anomalies remain available in Parquet and
+have no scoring effect unless formulas and tests change.
 
 ## Clusters and resilience
 
@@ -215,15 +233,29 @@ Cluster `top_gids` is a comma-separated list of up to five decimal int64 gids,
 ordered by descending priority then ascending gid. Hypotheses use the first
 matching condition in this order:
 
-1. At least 2 seeds: multi-seed convergence community.
-2. Mean incoming degree >1.25 times mean outgoing degree: collection-oriented structure.
-3. Mean outgoing degree >1.25 times mean incoming degree: distribution-oriented structure.
-4. At least 35% transit nodes: transit-heavy structure.
-5. At most 3 nodes or at least 70% peripheral nodes: sparse peripheral community.
-6. Otherwise: mixed-flow community.
+1. No observed incident transfers for any member: explain the isolated account(s)
+   and the inability to infer activity outside this sample. An initial case
+   account is identified as such; a singleton is not described as a shared network.
+2. At least 2 seeds: state group size, number of initial case accounts and internal
+   turnover; suggest reviewing shared links. Explicitly state that common group
+   membership does **not** prove directed fund convergence or common control.
+3. Mean incoming degree >1.25 times mean outgoing degree: possible collection
+   group, supported by the actual incoming/outgoing link counts and internal KZT.
+4. Mean outgoing degree >1.25 times mean incoming degree: possible distribution
+   group, with those same measured counts and internal KZT.
+5. At least 35% transit nodes: possible relay group, naming the actual role count,
+   group size and internal KZT; date-only observations do not trace the same funds.
+6. At most 3 nodes: small group, with size and internal KZT; size alone cannot
+   establish purpose. Otherwise, at least 70% peripheral nodes: report the count
+   lacking a clear role and the need for additional evidence.
+7. Otherwise: mixed payment group, with internal KZT and the two most common
+   observed roles (ties use role-name order); no single purpose is established.
 
-These are structural summaries, not inferred unlawful purposes. Multi-seed
-membership suggests a convergence hypothesis; it does not prove coordinated intent.
+These are complete, grounded descriptions of the observed structure. Link counts
+sum member-account degrees, so an internal edge appears once on each side of
+the comparison; they are not net external flows or account balances. The numeric
+thresholds, memberships, cluster IDs, role assignments and priority weights are
+unchanged by this wording. Hypotheses do not assert intent, ownership or guilt.
 
 Resilience preserves the baseline and hypothetical removal of priority top
 1/5/10/20, using the same priority/gid order. It reports `scenario`,

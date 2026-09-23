@@ -235,8 +235,8 @@ def test_validation_is_active_under_python_optimization(tmp_path):
 
 
 @pytest.mark.parametrize(("role", "reason"), [
-    ("consolidator", "Collection"), ("distributor", "Distribution"), ("transit", "Relay"),
-    ("coordinator", "Coordination"), ("terminal", "Observed endpoint"), ("peripheral", "Peripheral"),
+    ("consolidator", "collection point"), ("distributor", "distribution role"), ("transit", "incoming amount"),
+    ("coordinator", "coordinating account"), ("terminal", "suggesting an endpoint"), ("peripheral", "no specific role"),
 ])
 def test_role_evidence_readable_and_numeric(role, reason):
     row = pd.Series({"role": role, "depth": 2, "is_seed": False, "in_deg": 11, "out_deg": 4,
@@ -249,13 +249,15 @@ def test_role_evidence_readable_and_numeric(role, reason):
     assert 0 < len(text) <= 200
     assert any(character.isdigit() for character in text)
     assert "in_deg" not in text and "seed_reach" not in text
+    assert "counterparties" not in text and "percentile" not in text
+    assert text.endswith(".")
 
 
 def test_boundary_consolidator_keeps_role_reason():
     text = evidence_for(pd.Series({"role": "consolidator", "depth": 4, "in_deg": 11,
                                    "out_deg": 0, "in_kzt": 8.2e6, "seed_reach_count": 14}))
-    assert "Collection pattern" in text and "11" in text and "14" in text
-    assert "Beyond hop 4: activity unobserved" in text
+    assert "collection point" in text and "11" in text and "14" in text
+    assert "Outgoing transfers beyond hop 4 are unobserved." in text
     assert len(text) <= 200
 
 
@@ -263,7 +265,7 @@ def test_empty_isolated_and_missing_peripheral_evidence():
     empty = add_evidence(pd.DataFrame(columns=["gid", "role"]))
     assert empty.empty and "evidence" in empty
     isolated = evidence_for(pd.Series({"role": "peripheral", "is_seed": True, "in_deg": 0, "out_deg": 0}))
-    assert "0 incoming and 0 outgoing" in isolated and "Seed inflows incomplete" in isolated
+    assert "0 incoming, 0 outgoing" in isolated and "Initial case account; incoming transfers are incomplete." in isolated
     unavailable = evidence_for(pd.Series({"role": "peripheral"}))
     assert "unavailable" in unavailable and "0.55" in unavailable
 
@@ -274,9 +276,9 @@ def test_transit_explanation_ignores_invalid_raw_temporal_ratio(validity_flag, i
     row = pd.Series({"role": "transit", "depth": 2, "in_deg": 3, "out_deg": 4,
                      "pass_through": .8, "relay_2d_ratio": .95, validity_flag: invalid})
     text = evidence_for(row)
-    assert "2-day timing unavailable" in text
+    assert "Two-day timing is unavailable." in text
     assert "95%" not in text
-    assert "0.80" in text
+    assert "80%" in text
 
 
 def test_transit_explanation_uses_sanitized_decision_ratios():
@@ -284,8 +286,134 @@ def test_transit_explanation_uses_sanitized_decision_ratios():
                      "pass_through": .8, "relay_2d_ratio": .95,
                      "decision_pass_through": .7, "decision_relay_2d_ratio": .6})
     text = evidence_for(row)
-    assert "0.70" in text and "60%" in text
-    assert "0.80" not in text and "95%" not in text
+    assert "70%" in text and "60%" in text
+    assert "80%" not in text and "95%" not in text
+
+
+def test_collection_and_distribution_explain_observed_numbers_in_plain_language():
+    collection = evidence_for(pd.Series({"role": "consolidator", "depth": 2,
+        "in_deg": 11, "out_deg": 2, "in_kzt": 12500.50, "seed_reach_count": 3}))
+    assert collection == ("Received 12,500.5 KZT from 11 senders; a possible collection point. "
+                          "Reachable from 3 initial case accounts.")
+    distribution = evidence_for(pd.Series({"role": "distributor", "depth": 0,
+        "is_seed": True, "in_deg": 0, "out_deg": 8, "out_tx": 12, "out_kzt": 125000}))
+    assert distribution == ("Sent 125,000 KZT to 8 recipients in 12 transfers, suggesting a distribution role. "
+                            "Initial case account; incoming transfers are incomplete.")
+
+
+def test_relay_explanation_names_eligible_dates_and_does_not_trace_funds():
+    row = pd.Series({"role": "transit", "depth": 2, "in_deg": 2, "out_deg": 3,
+                     "pass_through": .8, "relay_2d_ratio": .75})
+    text = evidence_for(row)
+    assert "Outgoing amount is 80% of incoming amount" in text
+    assert "on or up to 2 days after 75% of eligible incoming dates" in text
+    assert "Dates cannot prove order or trace funds." in text
+    row["relay_2d_ratio"] = np.nan
+    text = evidence_for(row)
+    assert "80%" in text and "Two-day timing is unavailable." in text
+    assert "0%" not in text.replace("80%", "")
+
+
+def test_one_sender_and_one_recipient_are_described_in_the_singular():
+    text = evidence_for(pd.Series({"role": "peripheral", "in_deg": 1, "out_deg": 1}))
+    assert text == "Observed 1 sender and 1 recipient; no specific role has enough support."
+
+
+def test_initial_case_account_reach_explains_its_own_zero_hop_membership():
+    text = evidence_for(pd.Series({"role": "consolidator", "is_seed": True, "depth": 0,
+        "in_deg": 2, "out_deg": 1, "in_kzt": 1000, "seed_reach_count": 1}))
+    assert "Reachable from 1 initial case account (including itself)." in text
+    assert "incoming transfers are incomplete" in text
+    assert len(text) <= 200
+
+
+def test_coordinator_relative_ranks_remain_numeric_and_clearly_hypothetical():
+    text = evidence_for(pd.Series({"role": "coordinator", "depth": 1,
+        "in_deg": 2, "out_deg": 3, "seed_reach_count": 1, "cross_cluster_degree": 0,
+        "decision_betweenness_percentile": 1.0, "decision_pagerank_percentile": 1.0}))
+    assert text == ("Possible coordinating account: rank 1 for linking payment paths; "
+                    "rank 1 for network importance.")
+    assert "percentile" not in text and "organizer" not in text
+
+
+@pytest.mark.parametrize("role", ["consolidator", "distributor", "coordinator", "transit", "terminal", "peripheral"])
+@pytest.mark.parametrize("seed,boundary", [(False, False), (True, False), (False, True), (True, True)])
+def test_evidence_budget_preserves_whole_sentences_and_complete_observation_warnings(role, seed, boundary):
+    row = pd.Series({"role": role, "depth": 4 if boundary else 1, "is_seed": seed,
+        "in_deg": 2**63 - 1, "out_deg": 2**63 - 1, "in_kzt": 1e300,
+        "out_kzt": 1e300, "out_tx": 2**63 - 1, "seed_reach_count": 2**63 - 1,
+        "cross_cluster_degree": 2**63 - 1, "pass_through": 1.0, "relay_2d_ratio": .75,
+        "decision_betweenness_percentile": .99, "decision_pagerank_percentile": .98})
+    text = evidence_for(row)
+    assert 0 < len(text) <= 200 and text.endswith(".")
+    assert any(char.isdigit() for char in text)
+    assert "..." not in text and "unavailabl." not in text
+    if seed:
+        assert "Initial case account" in text and "incomplete" in text
+    if boundary:
+        assert "outgoing transfers beyond hop 4 are unobserved." in text.lower()
+    # Bounded alternatives end on authored complete phrases, not chopped words.
+    endings = ("incomplete.", "unobserved.", "collection point.", "initial case accounts.",
+               "distribution role.", "distributor.", "network importance.", "coordinating role.",
+               "trace funds.", "timing is unavailable.", "account balance.", "balance is unknown.",
+               "enough support.", "cutoff is 0.55.")
+    assert text.endswith(endings)
+
+
+def cluster_narrative(gids, transfers, *, seeds=(), roles=None):
+    graph = nx.DiGraph()
+    graph.add_nodes_from(gids)
+    for source, destination, amount in transfers:
+        graph.add_edge(source, destination, sum_kzt=amount)
+    members = pd.DataFrame({"gid": gids, "cluster_id": 0, "priority_score": 0.5,
+        "role": roles or ["peripheral"] * len(gids),
+        "in_deg": [graph.in_degree(gid) for gid in gids],
+        "out_deg": [graph.out_degree(gid) for gid in gids]})
+    nodes = pd.DataFrame({"gid": sorted(graph), "is_seed": [gid in seeds for gid in sorted(graph)]})
+    result = cluster_summaries(members, graph, nodes)
+    repeated = cluster_summaries(members.iloc[::-1], graph, nodes.iloc[::-1])
+    pd.testing.assert_frame_equal(result, repeated)
+    return result.iloc[0]
+
+
+def test_cluster_hypothesis_distinguishes_an_isolated_initial_case_account():
+    cluster = cluster_narrative([1], [], seeds=[1])
+    assert cluster.n_nodes == 1 and cluster.n_seed == 1 and cluster.sum_kzt_internal == 0
+    assert cluster.hypothesis.startswith("This group contains 1 initial case account with no observed transfers.")
+    assert "active outside the observed period or bank" in cluster.hypothesis
+    assert "convergence" not in cluster.hypothesis
+
+
+def test_multiple_case_accounts_in_a_cluster_do_not_claim_directed_convergence():
+    # Seed 1 reaches 3, while seed 2 has no outgoing path; shared membership
+    # cannot establish a common downstream collector or common controller.
+    cluster = cluster_narrative([1, 2, 3, 4], [(1, 3, 100), (4, 2, 200)], seeds=[1, 2])
+    assert "4 accounts, including 2 initial case accounts" in cluster.hypothesis
+    assert "300 KZT transferred within the group" in cluster.hypothesis
+    assert "does not prove that funds converge or that one person controls the accounts" in cluster.hypothesis
+
+
+@pytest.mark.parametrize("reverse,label", [(False, "collection"), (True, "distribution")])
+def test_group_flow_hypothesis_uses_actual_link_counts_and_internal_amount(reverse, label):
+    transfers = [(1, 3, 10), (2, 3, 20), (5, 4, 30), (3, 4, 40)]
+    if reverse:
+        transfers = [(dst, src, amount) for src, dst, amount in transfers]
+    cluster = cluster_narrative([3, 4], transfers)
+    assert f"Possible {label} group" in cluster.hypothesis
+    assert "4 outgoing and 1 incoming" in cluster.hypothesis if reverse else "4 incoming and 1 outgoing" in cluster.hypothesis
+    assert cluster.sum_kzt_internal == 40 and "Internal transfers total 40 KZT" in cluster.hypothesis
+
+
+@pytest.mark.parametrize("roles,expected", [
+    (["transit", "transit", "peripheral", "terminal"], "2 of 4 accounts have a relay role"),
+    (["peripheral"] * 4, "Most accounts (4 of 4) lack enough evidence"),
+    (["consolidator", "distributor", "peripheral", "terminal"], "1 possible collector and 1 possible distributor"),
+])
+def test_group_hypothesis_explains_role_composition_without_asserting_purpose(roles, expected):
+    cluster = cluster_narrative([1, 2, 3, 4], [(1, 2, 100), (2, 3, 100), (3, 4, 100), (4, 1, 100)], roles=roles)
+    assert expected in cluster.hypothesis
+    assert "400 KZT" in cluster.hypothesis and cluster.hypothesis.endswith(".")
+    assert "criminal" not in cluster.hypothesis and "organizer" not in cluster.hypothesis
 
 
 def test_clustering_repeated_runs_and_equivalent_row_permutations():

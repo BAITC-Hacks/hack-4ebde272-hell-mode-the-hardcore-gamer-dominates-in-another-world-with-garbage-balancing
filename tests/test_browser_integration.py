@@ -42,9 +42,13 @@ def test_offline_browser_rehearsal(tmp_path, monkeypatch):
            "MONEY_GRAPH_DATA_DIR": str(ROOT / "data"),
            "STREAMLIT_BROWSER_GATHER_USAGE_STATS": "false"}
     log_path = tmp_path / "streamlit.log"
+    # Ignore the developer's private .env even after a real key is configured.
+    launcher = ("import sys; from pathlib import Path; from src import config; "
+                "config.DEFAULT_ENV_PATH = Path(sys.argv.pop(1)); "
+                "from streamlit.web.cli import main; main()")
     with log_path.open("w", encoding="utf-8") as log:
         server = subprocess.Popen(
-            [sys.executable, "-m", "streamlit", "run", str(ROOT / "app.py"),
+            [sys.executable, "-c", launcher, str(tmp_path / ".env"), "run", str(ROOT / "app.py"),
              "--server.address=127.0.0.1", "--server.port=8597",
              "--server.headless=true", "--browser.gatherUsageStats=false"],
             env=env, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
@@ -83,6 +87,8 @@ def test_offline_browser_rehearsal(tmp_path, monkeypatch):
                     api.expect(page.get_by_test_id("stException")).to_have_count(0)
 
                 workspace("Investigation queue")
+                top_reason = pd.read_csv(output / "top_nodes.csv").iloc[0]["why"]
+                api.expect(page.get_by_text(top_reason, exact=True)).to_be_visible()
                 page.get_by_role("button", name="Open node card", exact=True).click()
                 api.expect(page.get_by_role("heading", name="Node card", exact=True)).to_be_visible()
                 search = page.get_by_role("textbox", name="Search arbitrary gid")
@@ -161,6 +167,10 @@ def test_offline_browser_rehearsal(tmp_path, monkeypatch):
                     assert uploaded_run in active_run_text
                 # Bad replacements never evict a valid active case or overwrite
                 # the configured source/output mounts.
+                page.get_by_role("button", name="Remove nodes.parquet", exact=True).click()
+                # Wait for the server to acknowledge removal before uploading:
+                # otherwise a click can still run the prior valid selection.
+                api.expect(upload_run).to_be_disabled()
                 page.get_by_label("Nodes Parquet", exact=True).locator('input[type="file"]').set_input_files({
                     "name": "nodes.parquet", "mimeType": "application/octet-stream", "buffer": b"invalid parquet",
                 })
