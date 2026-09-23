@@ -18,7 +18,7 @@ On POSIX: `source .venv/bin/activate`.
 ```bash
 python -m pip install -r requirements.txt
 python main.py --data data --out out
-python -m streamlit run app.py --browser.gatherUsageStats=false
+python -m streamlit run app.py --browser.gatherUsageStats=false --browser.serverAddress=localhost
 ```
 
 The first pipeline command generates and validates the complete analytical run.

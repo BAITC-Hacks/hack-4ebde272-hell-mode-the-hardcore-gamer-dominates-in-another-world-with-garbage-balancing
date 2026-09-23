@@ -7,7 +7,7 @@ ranked candidates. Regenerate with:
 ```bash
 python main.py --data data --out out --submission submission
 python main.py --data data --out out --validate-only
-python -m streamlit run app.py --browser.gatherUsageStats=false
+python -m streamlit run app.py --browser.gatherUsageStats=false --browser.serverAddress=localhost
 ```
 
 ## 0:00–0:30 — establish scope
