@@ -10,8 +10,10 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from collections import deque
 from dataclasses import dataclass
+from numbers import Integral
 from typing import Any, Callable
 
 import networkx as nx
@@ -30,6 +32,14 @@ clients for four hops. Incoming activity of seeds can be incomplete. At depth 4,
 outgoing transfers beyond the boundary are absent; an out_deg of zero is not proof
 of retention. Mention the relevant limitation whenever it affects the conclusion.
 If a requested fact is not available, say so plainly rather than estimating it.
+
+Return your final answer as JSON with only a claims array. Each claim must contain
+source_id, path (an RFC 6901 JSON pointer into that tool's result), and value (the
+exact scalar at that path). Select the fields relevant to the question, including
+exported evidence/explanations. Do not add prose, interpretations, labels, URLs,
+or calculations. The application validates each claim and renders the explanation
+and sampling limitations itself. Tool outputs include source_id and result.
+Identifiers must be copied as exact decimal strings; never convert them to floats.
 """
 
 
@@ -53,6 +63,37 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _exact_gid(value: Any) -> int:
+    """Reject lossy floating-point identifiers, including apparently integral ones."""
+    if isinstance(value, bool) or not (
+        isinstance(value, Integral) or isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value)
+    ):
+        raise ValueError("gid must be an exact integer or decimal string, never a float")
+    parsed = int(value)
+    if not -(2**63) <= parsed < 2**63:
+        raise ValueError("gid is outside signed int64 range")
+    return parsed
+
+
+_ID_KEYS = {"gid", "gid1", "gid2", "src", "dst"}
+_ID_LIST_KEYS = {"gids", "top_gids", "common_descendants", "paths"}
+
+
+def _tool_payload(value: Any, key: str = "") -> Any:
+    """Keep identifiers exact across JSON, model output and browser navigation."""
+    value = _json_safe(value)
+    if isinstance(value, dict):
+        return {k: _tool_payload(v, k) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_tool_payload(v, key) for v in value]
+    if value is not None and key in _ID_KEYS | _ID_LIST_KEYS:
+        # Some cluster exports store top_gids as a delimited string, not a list.
+        if key == "top_gids" and isinstance(value, str) and not re.fullmatch(r"[+-]?\d+", value):
+            return value
+        return str(_exact_gid(value))
+    return value
+
+
 @dataclass
 class GraphInvestigationTools:
     """Read-only deterministic graph lookups exposed to the language model."""
@@ -64,15 +105,18 @@ class GraphInvestigationTools:
 
     def __post_init__(self) -> None:
         self.nodes = self.nodes.copy()
-        self.nodes["gid"] = pd.to_numeric(self.nodes["gid"], errors="coerce")
-        self.nodes = self.nodes.dropna(subset=["gid"])
-        self.nodes["gid"] = self.nodes["gid"].astype("int64")
+        self.nodes["gid"] = pd.Series([_exact_gid(gid) for gid in self.nodes["gid"]], index=self.nodes.index, dtype="int64")
+        if self.nodes["gid"].duplicated().any():
+            raise ValueError("nodes must contain one record per gid")
+        self.top_nodes = self.top_nodes.copy()
+        if "gid" in self.top_nodes:
+            self.top_nodes["gid"] = pd.Series([_exact_gid(gid) for gid in self.top_nodes["gid"]], index=self.top_nodes.index, dtype="int64")
         self.edges = self.edges.copy()
         if not self.edges.empty:
-            self.edges["src"] = pd.to_numeric(self.edges["src"], errors="coerce")
-            self.edges["dst"] = pd.to_numeric(self.edges["dst"], errors="coerce")
-            self.edges = self.edges.dropna(subset=["src", "dst"])
-            self.edges[["src", "dst"]] = self.edges[["src", "dst"]].astype("int64")
+            for column in ("src", "dst"):
+                self.edges[column] = pd.Series([_exact_gid(gid) for gid in self.edges[column]], index=self.edges.index, dtype="int64")
+                if not self.edges[column].isin(self.nodes["gid"]).all():
+                    raise ValueError("edges reference nodes absent from the exported node table")
         if self.edges.empty:
             self.edges = pd.DataFrame(columns=["src", "dst", "sum_kzt", "n_tx"])
         self.graph = nx.DiGraph()
@@ -81,12 +125,13 @@ class GraphInvestigationTools:
             self.graph.add_edge(row["src"], row["dst"], **{k: v for k, v in row.items() if k not in ("src", "dst")})
 
     def _record(self, frame: pd.DataFrame, gid: int) -> dict[str, Any] | None:
-        row = frame.loc[frame["gid"] == int(gid)]
+        row = frame.loc[frame["gid"] == _exact_gid(gid)]
         if row.empty:
             return None
         return _json_safe(row.to_dict("records")[0])
 
     def get_node(self, gid: int) -> dict[str, Any]:
+        gid = _exact_gid(gid)
         record = self._record(self.nodes, gid)
         if record is None:
             return {"found": False, "gid": gid}
@@ -121,19 +166,22 @@ class GraphInvestigationTools:
         return result
 
     def get_counterparties(self, gid: int, limit: int = 25) -> dict[str, Any]:
-        gid = int(gid)
+        gid = _exact_gid(gid)
+        if gid not in self.graph:
+            return {"found": False, "gid": gid, "reason": "gid is absent from the supplied node table"}
         limit = max(1, min(int(limit), 100))
         inbound = self.edges[self.edges["dst"] == gid]
         outbound = self.edges[self.edges["src"] == gid]
         fields = [c for c in ["src", "dst", "sum_kzt", "n_tx", "depth"] if c in self.edges]
         return {
+            "found": True,
             "gid": gid,
             "inbound": _json_safe(inbound.sort_values("sum_kzt", ascending=False).head(limit)[fields].to_dict("records")),
             "outbound": _json_safe(outbound.sort_values("sum_kzt", ascending=False).head(limit)[fields].to_dict("records")),
         }
 
     def find_common_descendants(self, gids: list[int], max_hops: int = 4) -> dict[str, Any]:
-        gids = [int(g) for g in gids]
+        gids = [_exact_gid(g) for g in gids]
         max_hops = max(1, min(int(max_hops), 8))
         if not gids:
             return {"gids": [], "common_descendants": []}
@@ -148,7 +196,7 @@ class GraphInvestigationTools:
         return {"gids": gids, "max_hops": max_hops, "common_descendants": sorted(common)[:100]}
 
     def find_paths(self, src: int, dst: int, max_hops: int = 6, limit: int = 10) -> dict[str, Any]:
-        src, dst = int(src), int(dst)
+        src, dst = _exact_gid(src), _exact_gid(dst)
         if src not in self.graph or dst not in self.graph:
             return {"found": False, "reason": "source or destination is absent from the supplied graph"}
         max_hops, limit = max(1, min(int(max_hops), 10)), max(1, min(int(limit), 25))
@@ -173,7 +221,7 @@ class GraphInvestigationTools:
                 "note": "Paths are only within the supplied four-hop sample; search is bounded."}
 
     def compare_nodes(self, gid1: int, gid2: int) -> dict[str, Any]:
-        return {"node_1": self.get_node(int(gid1)), "node_2": self.get_node(int(gid2))}
+        return {"node_1": self.get_node(gid1), "node_2": self.get_node(gid2)}
 
 
 TOOL_SPECS = [
@@ -187,8 +235,164 @@ TOOL_SPECS = [
 ]
 
 
-def answer_question(question: str, tools: GraphInvestigationTools, model: str | None = None) -> str:
-    """Use tool calling; model output is permitted only after deterministic calls.
+for _spec in TOOL_SPECS:
+    for _key, _property in _spec["function"]["parameters"]["properties"].items():
+        if _key in _ID_KEYS:
+            _property["type"] = "string"
+            _property["description"] = "Exact decimal gid string; do not round."
+        elif _key == "gids":
+            _property["items"] = {"type": "string"}
+
+
+ANSWER_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "cited_graph_evidence", "strict": True,
+        "schema": {
+            "type": "object", "additionalProperties": False,
+            "properties": {"claims": {"type": "array", "items": {
+                "type": "object", "additionalProperties": False,
+                "properties": {
+                    "source_id": {"type": "string"}, "path": {"type": "string"},
+                    "value": {"type": ["string", "number", "boolean", "null"]},
+                },
+                "required": ["source_id", "path", "value"],
+            }}},
+            "required": ["claims"],
+        },
+    },
+}
+
+
+@dataclass(frozen=True)
+class GroundedAnswer:
+    """Only validated facts and existing decimal gids may reach the UI."""
+
+    text: str
+    node_gids: tuple[str, ...] = ()
+    sources: tuple[dict[str, Any], ...] = ()
+    rejected_claims: int = 0
+
+
+def _pointer(result: Any, path: str) -> tuple[Any, list[Any], list[str]]:
+    if not isinstance(path, str) or not path.startswith("/"):
+        raise ValueError("Claims require a JSON pointer to an observed field")
+    raw = path[1:].split("/")
+    if any(re.search(r"~(?![01])", part) for part in raw):
+        raise ValueError("Invalid JSON pointer escape")
+    parts = [part.replace("~1", "/").replace("~0", "~") for part in raw]
+    ancestors = []
+    value = result
+    for part in parts:
+        ancestors.append(value)
+        if isinstance(value, dict):
+            value = value[part]
+        elif isinstance(value, list) and re.fullmatch(r"0|[1-9]\d*", part):
+            value = value[int(part)]
+        else:
+            raise ValueError("Claim does not reference an observed field")
+    if isinstance(value, (dict, list)):
+        raise ValueError("Claims must reference individual scalar fields")
+    return value, ancestors, parts
+
+
+def _same_scalar(actual: Any, claimed: Any) -> bool:
+    if isinstance(actual, (bool, str)) or actual is None:
+        return type(actual) is type(claimed) and actual == claimed
+    return type(claimed) in (int, float) and math.isfinite(claimed) and actual == claimed
+
+
+def _markdown_text(value: Any) -> str:
+    """Escape evidence as plain text; dataset strings cannot create navigation."""
+    text = str(value).replace("\n", " ").replace("\r", " ")
+    return re.sub(r"([\\`*_{}\[\]()<>#+.!|])", r"\\\1", text)
+
+
+def validate_answer(content: str, ledger: dict[str, dict[str, Any]], tools: GraphInvestigationTools) -> GroundedAnswer:
+    """Validate each field/value claim, never treat a tool call as prose verification.
+
+    Free-form model text is intentionally not displayed. The model chooses the
+    relevant exported facts; rendering, citations, links and caveats are local.
+    """
+    try:
+        payload = json.loads(content)
+    except (TypeError, ValueError):
+        return GroundedAnswer("The assistant response was rejected: it did not contain verifiable cited claims.", rejected_claims=1)
+    if not isinstance(payload, dict) or set(payload) != {"claims"} or not isinstance(payload["claims"], list):
+        return GroundedAnswer("The assistant response was rejected: unsupported text or invalid claim structure.", rejected_claims=1)
+    sources, lines, node_gids = [], [], set()
+    rejected = max(0, len(payload["claims"]) - 30)
+    seen = set()
+    for claim in payload["claims"][:30]:
+        try:
+            if not isinstance(claim, dict) or set(claim) != {"source_id", "path", "value"}:
+                raise ValueError("Unsupported assertion")
+            source_id, path = claim["source_id"], claim["path"]
+            source = ledger[source_id]
+            if isinstance(source["result"], dict) and "error" in source["result"]:
+                raise ValueError("Failed tools cannot support claims")
+            actual, ancestors, parts = _pointer(source["result"], path)
+            if not _same_scalar(actual, claim["value"]):
+                raise ValueError("Claim value differs from source")
+            # References below found:false cannot invent a valid client identity.
+            missing = any(isinstance(item, dict) and item.get("found") is False and "gid" in item for item in ancestors)
+            if missing and parts[-1] not in {"found", "gid", "reason"}:
+                raise ValueError("Missing nodes have no observed metrics")
+            claim_gids = set()
+            context = ""
+            for ancestor in reversed(ancestors):
+                if isinstance(ancestor, dict) and "gid" in ancestor:
+                    context = f"gid {ancestor['gid']}: "
+                    if not missing and _exact_gid(ancestor["gid"]) in tools.graph:
+                        claim_gids.add(str(_exact_gid(ancestor["gid"])))
+                    break
+            if not context:
+                args = source["arguments"]
+                context = f"{source['tool']}({json.dumps(args, ensure_ascii=False)}): "
+            if not missing:
+                for ancestor in ancestors:
+                    if isinstance(ancestor, dict):
+                        for key in ("src", "dst"):
+                            if key in ancestor and _exact_gid(ancestor[key]) in tools.graph:
+                                claim_gids.add(str(_exact_gid(ancestor[key])))
+                if any(part in _ID_KEYS | _ID_LIST_KEYS for part in parts):
+                    gid = _exact_gid(actual)
+                    if gid in tools.graph:
+                        claim_gids.add(str(gid))
+            if (source_id, path) in seen:
+                continue
+            seen.add((source_id, path))
+            node_gids.update(claim_gids)
+            display = "unavailable" if actual is None else str(actual)
+            label = parts[-1].replace("_", " ")
+            if label == "found" and actual is False:
+                display = "no result in the supplied sample"
+            lines.append(f"- {_markdown_text(context + label + ' = ' + display)} [{source_id}]")
+            sources.append({"source_id": source_id, "tool": source["tool"],
+                            "arguments": source["arguments"], "path": path, "value": actual})
+        except (KeyError, IndexError, TypeError, ValueError, OverflowError):
+            rejected += 1
+    if not sources:
+        return GroundedAnswer("No supported claims were returned. Ask about a supplied gid or available metric.", rejected_claims=rejected)
+    limitations = ["These exported metrics support investigation hypotheses and candidates for review; they do not establish guilt."]
+    for gid in sorted(node_gids, key=int):
+        record = tools.get_node(gid)
+        if record.get("depth") == 4:
+            limitations.append(f"gid {gid}: outgoing transfers beyond hop 4 are not present in the supplied sample. Do not interpret out_deg=0 as confirmed retention.")
+        if record.get("is_seed") in (True, 1):
+            limitations.append(f"gid {gid}: incoming seed activity is incomplete; observed inbound/outbound values are not complete balances.")
+    if any(any(term in source["path"] for term in ("relay", "burst", "date", "temporal")) for source in sources):
+        limitations.append("Observations are date-only. Date overlap does not prove intraday ordering or movement of the same funds; unavailable/censored windows are not zero activity.")
+    if any(source["tool"] in {"find_paths", "find_common_descendants"} for source in sources):
+        limitations.append("Routes and descendants are bounded searches of the supplied directed sample; absent results do not rule out paths outside the sample or search limit.")
+    text = "Verified exported evidence:\n\n" + "\n".join(lines) + "\n\n" + "\n\n".join(limitations)
+    if rejected:
+        text += f"\n\n{rejected} unsupported claim(s) were omitted."
+    return GroundedAnswer(text, tuple(sorted(node_gids, key=int)), tuple(sources), rejected)
+
+
+def answer_question_result(question: str, tools: GraphInvestigationTools, model: str | None = None) -> GroundedAnswer:
+    """Select and validate cited tool evidence; never render arbitrary model prose.
 
     The OpenAI import is deliberately local so missing optional dependencies never
     affect the Streamlit application.
@@ -210,22 +414,34 @@ def answer_question(question: str, tools: GraphInvestigationTools, model: str | 
             "get_counterparties", "find_paths", "compare_nodes"
         )
     }
-    grounded = False
+    ledger: dict[str, dict[str, Any]] = {}
     for _ in range(6):
-        response = client.chat.completions.create(model=model, messages=messages, tools=TOOL_SPECS, tool_choice="auto" if grounded else "required")
+        response = client.chat.completions.create(
+            model=model, messages=messages, tools=TOOL_SPECS,
+            tool_choice="auto" if ledger else "required", response_format=ANSWER_FORMAT,
+        )
         message = response.choices[0].message
         messages.append(message.model_dump(exclude_none=True))
         if not message.tool_calls:
-            if not grounded:
-                return "No verified tool result was returned. Please ask about a specific node or cluster."
-            return message.content or "No grounded response was returned."
+            if not ledger:
+                return GroundedAnswer("No verified tool result was returned. Please ask about a specific node or cluster.")
+            return validate_answer(message.content, ledger, tools)
         for call in message.tool_calls:
             try:
                 args = json.loads(call.function.arguments)
-                result = functions[call.function.name](**args)
-                grounded = True
+                result = _tool_payload(functions[call.function.name](**args))
+                if isinstance(result, dict) and "error" in result:
+                    raise ValueError("Tool returned an error")
+                source_id = f"S{len(ledger) + 1}"
+                ledger[source_id] = {"tool": call.function.name, "arguments": _tool_payload(args), "result": result}
+                result = {"source_id": source_id, "result": result}
             except Exception as exc:  # tool errors are context, not hidden facts
-                result = {"error": str(exc)}
+                result = {"error": type(exc).__name__, "message": "Tool failed; no evidence source was created."}
             messages.append({"role": "tool", "tool_call_id": call.id,
                              "content": json.dumps(_json_safe(result), ensure_ascii=False, allow_nan=False)})
-    return "I reached the tool-call limit before completing a grounded response. Please narrow the question."
+    return GroundedAnswer("I reached the tool-call limit before completing a grounded response. Please narrow the question.")
+
+
+def answer_question(question: str, tools: GraphInvestigationTools, model: str | None = None) -> str:
+    """Compatibility wrapper for clients that only render the validated text."""
+    return answer_question_result(question, tools, model).text

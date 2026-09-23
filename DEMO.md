@@ -1,90 +1,150 @@
-# Five-minute analyst demo
+# Five-minute Money Graph demo
 
-This runbook deliberately selects from the **integrated analytics output**, not
-from a hard-coded gid. That keeps the demonstration real when the role/priority
-engine is updated. At the time this UI branch was created, `out/` was not present
-and the supplied starter exports empty role/priority fields; do not invent sample
-numbers. Run the pipeline first, then use the three real candidates selected below
-and paste the displayed figures into the presenter notes.
-
-## Before the demo (30 seconds)
+These examples were selected from the integrated Python 3.11 output, not injected
+into production decisions. The package has 2,248 node rows, 91 clusters and 50
+ranked candidates. Regenerate with:
 
 ```bash
-python main.py --data data --out out
-streamlit run app.py
+python main.py --data data --out out --submission submission
+python main.py --data data --out out --validate-only
+python -m streamlit run app.py --browser.gatherUsageStats=false
 ```
 
-In the Streamlit sidebar, keep **Exports directory** as `out` and **Source data
-directory** as `data`. On Overview, confirm the real scope: 2,248 nodes, 3,119
-edges, 4,840 transactions, 81 seeds, observed turnover and the actual role/cluster
-counts. State: “This is a four-hop outgoing sample, so these are investigation
-candidates, not conclusions.”
+## 0:00–0:30 — establish scope
 
-## Candidate selection (run once after export)
+Overview: 2,248 nodes, 3,119 directed edges, 4,840 transactions, 81 seeds and
+365,890,012.01 KZT observed turnover (the metric card rounds to whole KZT).
+Say “July 2026 intrabank transfers ≥5,000 KZT, outgoing expansion to four hops.”
+Scores are review heuristics and hypotheses. No ground truth establishes
+classification accuracy or guilt.
 
-Use this read-only command from the repository root to print the three actual
-gids and their exported evidence. It deliberately does not recalculate roles or
-priorities.
+## 0:30–1:30 — collection candidate
 
-```bash
-python -c "import pandas as p; d=p.read_csv('out/nodes_roles.csv'); t=p.read_csv('out/top_nodes.csv'); x=t.merge(d,on='gid',how='left',suffixes=('_top','')); role=lambda z: x[x['role'].astype(str).str.lower().isin(z)].sort_values('priority_score_top' if 'priority_score_top' in x else 'priority_score',ascending=False).head(1); b=d[p.to_numeric(d['depth'],errors='coerce').eq(4)].sort_values('priority_score',ascending=False).head(1); print('COORD/CONSOLIDATOR\n',role({'coordinator','consolidator'}).T.to_string()); print('\nTRANSIT/DISTRIBUTOR\n',role({'transit','distributor'}).T.to_string()); print('\nHOP-4 BOUNDARY\n',b.T.to_string())"
-```
+In the queue select **consolidator**, then open gid **100000003115284100**.
 
-Record the printed values in the three boxes below before presenting. This is the
-exact evidence the node card will render (plus any extra exported feature columns).
+| Card field | Actual exported value |
+|---|---:|
+| Role strength | 0.970420887893 (card: 0.970) |
+| Review priority | 0.974189866614 (card: 0.974) |
+| Cluster / depth | 12 / 1 |
+| In / out degree | 8 / 2 |
+| In / out KZT | 2,160,500 / 517,000 |
+| In / out transactions | 15 / 4 |
+| Seed reach | 9 |
+| PageRank / betweenness percentile | 97.5th / 94.5th |
+| Temporal relay | 0.600 |
+| Cross-cluster degree / anomaly | 5 / 0.950 |
 
-| Case | gid | Role / confidence | Priority score | Numeric evidence / `why` |
-|---|---:|---|---:|---|
-| A — coordinator or consolidator | _(output)_ | _(output)_ | _(output)_ | _(copy exported `evidence` and `why`)_ |
-| B — transit or distributor | _(output)_ | _(output)_ | _(output)_ | _(copy exported `evidence` and `why`)_ |
-| C — depth-4 boundary | _(output)_ | _(output)_ | _(output)_ | `depth=4`; copy in/out KZT, degrees and evidence |
+Exact role evidence: `in_deg=8, in=2,160,500 KZT, seed_reach=9, retention=0.76`.
+Explain “eight observed payers and nine upstream seeds meet the consolidator gate;
+the weighted role strength is 0.9704.” The displayed retention is a sampled
+out/in-derived measure, not a verified account balance.
 
-## 0:30–1:20 — Queue: case A, a coordinator/consolidator
+The three largest priority contributions are role strength **0.242605222**,
+seed reach **0.199688612**, and betweenness **0.141792705**. Show the contribution
+table, then open the 1-hop network and its role legend.
+Cluster 12 contains **59 nodes**, **1 seed**, and **6,772,097 KZT** internal turnover;
+the exported hypothesis is “collection-oriented structure.”
 
-1. Open **Investigation queue**; filter Role to the selected role from case A.
-2. Point to its rank, gid, exported priority, cluster, seed reach, turnover and
-   `why`; select the row and open the node card.
-3. Read the real numbers recorded above: role confidence, in/out degree, in/out
-   KZT, in/out transaction counts, PageRank/betweenness percentiles, seed reach
-   and the exact `evidence`/priority decomposition.
-4. Open its 1-hop graph. Explain only what the arrows show: observed funds flow
-   toward/from this gid. Say: “The role is a candidate for review supported by
-   these supplied figures, not an allegation.”
+## 1:30–2:30 — distribution candidate
 
-## 1:20–2:20 — Flow: case B, a transit/distributor
+Search **100000000331309100** and open its 2-hop neighborhood.
 
-1. Return to the queue and filter to the real role from case B; open its card.
-2. Contrast the exact incoming/outgoing KZT, transaction counts, pass-through or
-   temporal relay feature (if exported), and its `why` with case A.
-3. Switch to **Network explorer → selected gid, 2 hops**. Highlight arrows,
-   counterparties and any cross-cluster degree exported by the pipeline.
-4. Close with the investigation question: “Which adjacent high-value flows and
-   transaction dates should we request to corroborate this routing hypothesis?”
+| Card field | Actual exported value |
+|---|---:|
+| Role / strength | distributor / 0.994747467835 (card: 0.995) |
+| Review priority | 0.974321587005 (card: 0.974) |
+| Cluster / depth | 48 / 2 |
+| In / out degree | 5 / 99 |
+| In / out KZT | 984,635 / 23,001,375 |
+| In / out transactions | 8 / 126 |
+| Seed reach | 4 |
+| PageRank / betweenness percentile | 93.9th / 99.8th |
+| Temporal relay | 1.000 |
+| Cross-cluster degree / anomaly | 29 / 0.944 |
 
-## 2:20–3:20 — Boundary: case C at depth 4
+Exact evidence: `out_deg=99, out=23,001,375 KZT, out_tx=126, cross_out=25`.
+Show 99 recipients and 126 observed outgoing transfers; 25 outgoing relationships
+cross the assigned cluster boundary. Toggle cluster colors/highlighting.
+The three largest priority contributions are role strength **0.248686867**,
+seed reach **0.184919929**, and betweenness **0.149666370**.
 
-1. Search the actual case-C gid in **Node card**.
-2. Show the amber boundary warning and read it verbatim: “Outgoing transfers
-   beyond hop 4 are not present in the supplied sample. Do not interpret
-   out_deg=0 as confirmed retention.”
-3. State the actual depth, in/out KZT, transaction counts and evidence recorded
-   above. Point out the suggested next request: extended outbound history plus
-   counterparties/dates.
+Outflow greatly exceeds observed inflow; missing balances and external activity
+prevent a source-of-funds conclusion. Relay=1 describes date overlap, not proof
+that received money was forwarded in a particular order. Request opening balance,
+a longer period and timestamped adjacent transfers.
 
-## 3:20–4:20 — Cluster and resilience context
+## 2:30–3:30 — boundary case
 
-1. Open **Cluster review** for case A’s real cluster. Show node/seed count,
-   internal turnover, top gids, role mix and the exported hypothesis.
-2. If `out/resilience.csv` is present, open **Resilience**. Compare baseline,
-   remove-top-1, top-5, top-10 and top-20 on largest component, components and
-   fraction remaining.
-3. Use the exact framing: this is *structural concentration analysis*, not proof
-   that blocking accounts would destroy a criminal network.
+Search **100000003037476100**.
 
-## 4:20–5:00 — Safe close and optional AI
+| Card field | Actual exported value |
+|---|---:|
+| Role / strength | consolidator / 0.852461447212 (card: 0.852) |
+| Review priority | 0.658151585039 (card: 0.658) |
+| Cluster / depth | 9 / 4 |
+| In / out degree | 3 / 0 |
+| In / out KZT | 555,000 / 0 |
+| In / out transactions | 3 / 0 |
+| Seed reach | 2 |
+| PageRank / betweenness percentile | 64.5th / 37.0th |
+| Cross-cluster degree / anomaly | 1 / 0.439 |
 
-Show the optional AI page only if a configured `OPENAI_API_KEY` is approved for
-the environment. Ask it to compare cases A and B; it can use only deterministic
-lookups and must cite gids/numbers. End with: “The workflow preserves the evidence,
-the sample boundary and the next data request—so an analyst can make a defensible
-decision about what to review next.”
+Read the card warning: “Outgoing transfers beyond hop 4 are not present in the
+supplied sample. Do not interpret out_deg=0 as confirmed retention.”
+
+Three observed payers and two upstream seeds satisfy the consolidator gate.
+The baseline evidence string currently says
+`depth=4, in_deg=3, out_deg=0; boundary-censored beyond hop 4`;
+it omits that winning-role reasoning, a Member 2 post-audit fix still pending.
+Baseline raw `relay_2d_ratio=0` is censored here and must not be interpreted as
+observed non-relay; the card explains that limitation.
+Largest priority contributions are role strength **0.213115362**, seed reach
+**0.128336299**, and turnover **0.087655694**.
+Request outgoing payments beyond hop 4 and the following observation window.
+
+## 3:30–4:20 — structure and isolated clients
+
+Open Resilience:
+
+| Removal | Largest weak component | Components | Fraction of baseline largest |
+|---|---:|---:|---:|
+| Baseline | 1,877 | 35 | 1.000000 |
+| Top 1 | 1,782 | 93 | 0.949387 |
+| Top 5 | 1,695 | 149 | 0.903037 |
+| Top 10 | 1,604 | 205 | 0.854555 |
+| Top 20 | 1,342 | 353 | 0.714971 |
+
+Call this structural concentration analysis. It does not simulate operational
+intervention or prove a criminal network would collapse.
+
+Optional quick navigation check: **100000000456947100** is a known isolated seed,
+depth 0, in/out degrees 0/0, in/out KZT 0/0, cluster 29. Its graph shows a single
+seed node. Search **-99** to contrast the explicit unknown-gid state.
+
+## 4:20–5:00 — explanation challenge and close
+
+Ask a teammate to choose three gids from the supplied node file. For each:
+
+1. Search the exact gid in Node card.
+2. Read role strength, degrees/KZT, seed reach and the exported evidence.
+3. Explain the largest priority contributions and any seed/hop/date limitation.
+4. State the next data request.
+
+The automated Chromium rehearsal searches a connected node, a boundary node and
+an isolated seed, checks their evidence cards and enforces a combined **<60s**
+search limit. It also visits all seven pages, opens graph canvases with external
+network access disabled, navigates queue→card and cluster→network, regenerates
+outputs and reloads the app. This verifies interaction, not a human narrator's
+ability to deliver the five-minute explanation; rehearse the spoken timing above.
+
+Without a key, show the fully working core and the optional AI disabled state.
+With approved configuration, ask the assistant for the first candidate's seed
+reach: it selects cited exported fields, local validation rejects unsupported
+claims, and an **Open gid** button opens only a known node. Live API behavior
+has not been verified in this delivery.
+
+The baseline top CSV still repeats role evidence in `why`; use the node card's
+separate contribution table for numerical priority reasoning. A completed
+Member 2 commit must improve the exported reasons before claiming all audit
+requirements closed.

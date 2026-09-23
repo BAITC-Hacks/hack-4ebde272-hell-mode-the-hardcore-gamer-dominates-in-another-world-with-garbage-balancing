@@ -8,10 +8,14 @@ the pipeline owned by the analytics team.
 from __future__ import annotations
 
 import html
+import hashlib
+import json
+import colorsys
 import math
 import os
-from numbers import Real
-from dataclasses import dataclass
+import re
+from numbers import Integral, Real
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
@@ -25,6 +29,9 @@ ROLE_COLORS = {
     "distributor": "#ea580c", "terminal": "#16a34a", "peripheral": "#64748b",
 }
 MISSING = "Not exported"
+NODE_COLUMNS = ["gid", "role", "role_score", "cluster_id", "priority_score", "evidence"]
+SOURCE_FILES = ("nodes.parquet", "edges.parquet", "transactions.parquet")
+EXPORT_FILES = ("nodes_roles.csv", "clusters.csv", "top_nodes.csv", "node_features.parquet", "resilience.csv")
 
 
 @dataclass
@@ -38,6 +45,8 @@ class InvestigationData:
     resilience: pd.DataFrame
     output_dir: Path
     data_dir: Path
+    features: pd.DataFrame = field(default_factory=pd.DataFrame)
+    metadata: dict = field(default_factory=dict)
 
 
 def display_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -98,9 +107,76 @@ def read_csv_if_exists(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, dtype={"gid": "string", "top_gids": "string"}) if path.exists() else pd.DataFrame()
 
 
-@st.cache_data(show_spinner="Loading investigation exports…")
+def exact_ids(series: pd.Series, label: str) -> pd.Series:
+    """Reject lossy/fractional IDs before converting, including integral floats."""
+    parsed = []
+    for item in series:
+        if isinstance(item, bool) or pd.isna(item):
+            raise ValueError(f"{label} must contain non-null int64 identifiers")
+        if isinstance(item, Integral):
+            number = int(item)
+        elif isinstance(item, str) and re.fullmatch(r"-?(0|[1-9][0-9]*)", item):
+            number = int(item)
+        else:
+            raise ValueError(f"{label} contains a non-integer identifier; floating-point gids are not safe")
+        if not -(2**63) <= number < 2**63:
+            raise ValueError(f"{label} contains an identifier outside int64")
+        parsed.append(number)
+    return pd.Series(parsed, index=series.index, dtype="int64", name=series.name)
+
+
+def file_fingerprints(out_dir: Path, data_dir: Path) -> tuple:
+    """Hash bytes, not just timestamps: same-path/same-size regeneration is fresh."""
+    paths = {data_dir / name for name in SOURCE_FILES}
+    paths.update(out_dir / name for name in (*EXPORT_FILES, "run_metadata.json"))
+    if out_dir.is_dir():
+        paths.update(path for path in out_dir.iterdir() if path.suffix in {".csv", ".parquet", ".json"})
+    result = []
+    for path in sorted(paths, key=str):
+        digest = None
+        if path.is_file():
+            hasher = hashlib.sha256()
+            with path.open("rb") as source:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    hasher.update(block)
+            digest = hasher.hexdigest()
+        result.append((str(path), digest))
+    return tuple(result)
+
+
+def verify_provenance(out_dir: Path, data_dir: Path, fingerprints: tuple) -> dict:
+    """A complete manifest prevents mixing new graph context with old scores."""
+    hashes = dict(fingerprints)
+    if not any(hashes.get(str(out_dir / name)) for name in EXPORT_FILES):
+        return {}
+    metadata_path = out_dir / "run_metadata.json"
+    if not metadata_path.is_file():
+        raise ValueError("Exports have no run_metadata.json provenance. Regenerate with the production pipeline.")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("schema_version") != 1 or metadata.get("status") != "complete":
+        raise ValueError("Export run metadata is unsupported or incomplete. Wait for the pipeline to finish, then reload.")
+    if not isinstance(metadata.get("run_id"), str) or not metadata["run_id"].strip():
+        raise ValueError("Export run metadata must identify a nonempty run_id. Regenerate the pipeline outputs.")
+    for section, directory, required in (("inputs", data_dir, SOURCE_FILES), ("outputs", out_dir, EXPORT_FILES)):
+        entries = metadata.get(section, {})
+        for name in required:
+            entry = entries.get(name, {})
+            expected, actual = entry.get("sha256"), hashes.get(str(directory / name))
+            if not expected or actual != expected:
+                raise ValueError(f"Dataset provenance mismatch: {section}/{name}. Use source data and exports from the same completed run.")
+    return metadata
+
+
 def load_data(output_location: str, source_location: str) -> InvestigationData:
     out_dir, data_dir = resolve_path(output_location), resolve_path(source_location)
+    fingerprints = file_fingerprints(out_dir, data_dir)
+    return _load_data(str(out_dir), str(data_dir), fingerprints)
+
+
+@st.cache_data(show_spinner="Loading investigation exports…")
+def _load_data(output_location: str, source_location: str, fingerprints: tuple) -> InvestigationData:
+    out_dir, data_dir = resolve_path(output_location), resolve_path(source_location)
+    metadata = verify_provenance(out_dir, data_dir, fingerprints)
     roles = read_csv_if_exists(out_dir / "nodes_roles.csv")
     clusters = read_csv_if_exists(out_dir / "clusters.csv")
     top_nodes = read_csv_if_exists(out_dir / "top_nodes.csv")
@@ -116,6 +192,12 @@ def load_data(output_location: str, source_location: str) -> InvestigationData:
         return pd.read_parquet(path) if path.exists() else pd.DataFrame()
 
     edges, source_nodes, transactions = parquet("edges"), parquet("nodes"), parquet("transactions")
+    feature_path = out_dir / "node_features.parquet"
+    features = pd.read_parquet(feature_path) if feature_path.exists() else pd.DataFrame()
+    if "gid" not in features and features.index.name == "gid":
+        features = features.reset_index()
+    if not roles.empty and list(roles.columns) != NODE_COLUMNS:
+        raise ValueError("nodes_roles.csv must have exactly: " + ",".join(NODE_COLUMNS) + ". Regenerate production exports.")
     for name, frame, required in (
         ("nodes_roles.csv", roles, {"gid", "role", "priority_score"}),
         ("clusters.csv", clusters, {"cluster_id"}),
@@ -123,17 +205,37 @@ def load_data(output_location: str, source_location: str) -> InvestigationData:
         ("nodes.parquet", source_nodes, {"gid", "depth", "is_seed"}),
         ("edges.parquet", edges, {"src", "dst", "sum_kzt", "n_tx"}),
         ("transactions.parquet", transactions, {"src", "dst", "date", "sum_kzt"}),
+        ("node_features.parquet", features, {"gid"}),
     ):
         if not frame.empty and not required.issubset(frame.columns):
             raise ValueError(f"{name} is missing columns: {sorted(required - set(frame.columns))}")
-        if "gid" in frame and (frame["gid"].isna().any() or frame["gid"].duplicated().any()):
+        for identifier in ("gid", "src", "dst"):
+            if identifier in frame:
+                frame[identifier] = exact_ids(frame[identifier], f"{name}.{identifier}")
+        if "gid" in frame and frame["gid"].duplicated().any():
             raise ValueError(f"{name} must contain unique, non-null gids")
+    if not roles.empty:
+        expected = set(roles["gid"])
+        if set(features.get("gid", [])) != expected or set(source_nodes.get("gid", [])) != expected:
+            raise ValueError("Node gids must match one-to-one in nodes_roles.csv, node_features.parquet and nodes.parquet")
+        if not set(top_nodes.get("gid", [])).issubset(expected):
+            raise ValueError("top_nodes.csv contains gids absent from nodes_roles.csv")
+    known = set(source_nodes.get("gid", []))
+    for name, frame in (("edges.parquet", edges), ("transactions.parquet", transactions)):
+        if not frame.empty and not (set(frame["src"]) | set(frame["dst"])).issubset(known):
+            raise ValueError(f"{name} refers to gids absent from nodes.parquet")
+    if file_fingerprints(out_dir, data_dir) != fingerprints:
+        raise ValueError("Files changed during loading. Wait for the export run to finish, then reload.")
     return InvestigationData(roles, clusters, top_nodes, edges, source_nodes,
-                             transactions, resilience, out_dir, data_dir)
+                             transactions, resilience, out_dir, data_dir, features, metadata)
+
+
+# Preserve the explicit reload action alongside automatic content invalidation.
+load_data.clear = _load_data.clear
 
 
 def merged_nodes(data: InvestigationData) -> pd.DataFrame:
-    """Use exported role rows as authority; enrich only with source-node fields."""
+    """Keep the six submission fields authoritative; join exact gid-keyed metrics."""
     roles = data.roles.copy()
     if roles.empty and not data.nodes.empty:
         roles = data.nodes.copy()
@@ -142,24 +244,35 @@ def merged_nodes(data: InvestigationData) -> pd.DataFrame:
     gid_col = first_column(roles, "gid")
     if gid_col != "gid" and gid_col:
         roles = roles.rename(columns={gid_col: "gid"})
-    roles["gid"] = pd.to_numeric(roles["gid"], errors="coerce")
-    roles = roles.dropna(subset=["gid"])
-    roles["gid"] = roles["gid"].astype("int64")
+    roles["gid"] = exact_ids(roles["gid"], "nodes_roles.gid")
+    if not data.features.empty:
+        features = data.features.copy()
+        features["gid"] = exact_ids(features["gid"], "node_features.gid")
+        if features["gid"].duplicated().any() or set(features["gid"]) != set(roles["gid"]):
+            raise ValueError("node_features.parquet must match submission gids one-to-one")
+        aligned = features.set_index("gid").reindex(roles["gid"])
+        for name in set(NODE_COLUMNS[1:]) & set(features.columns):
+            left, right = roles[name].reset_index(drop=True), aligned[name].reset_index(drop=True)
+            if name in {"role_score", "priority_score"}:
+                agree = ((left - right).abs() <= 1e-12) | (left.isna() & right.isna())
+            else:
+                agree = (left.astype("string") == right.astype("string")).fillna(False)
+            if not agree.all():
+                raise ValueError(f"node_features.parquet conflicts with authoritative submission field {name}")
+        missing = [name for name in features if name != "gid" and name not in roles]
+        roles = roles.merge(features[["gid", *missing]], on="gid", how="left", validate="one_to_one")
     if not data.nodes.empty and "gid" in data.nodes:
         source = data.nodes.copy()
-        source["gid"] = pd.to_numeric(source["gid"], errors="coerce")
-        source = source.dropna(subset=["gid"])
-        source["gid"] = source["gid"].astype("int64")
+        source["gid"] = exact_ids(source["gid"], "nodes.gid")
         missing = [c for c in source.columns if c != "gid" and c not in roles.columns]
-        roles = roles.merge(source[["gid", *missing]], on="gid", how="left")
+        roles = roles.merge(source[["gid", *missing]], on="gid", how="left", validate="one_to_one")
     # These are direct, observed edge aggregates for presentation only.  They do
     # not alter the analytics-owned role, cluster, PageRank, anomaly or priority
     # outputs, and are only added when an export did not already supply them.
     if not data.edges.empty and {"src", "dst"}.issubset(data.edges.columns):
         edges = data.edges.copy()
         for endpoint in ("src", "dst"):
-            edges[endpoint] = pd.to_numeric(edges[endpoint], errors="coerce")
-        edges = edges.dropna(subset=["src", "dst"])
+            edges[endpoint] = exact_ids(edges[endpoint], f"edges.{endpoint}")
         amount = pd.to_numeric(edges["sum_kzt"], errors="coerce").fillna(0.0) if "sum_kzt" in edges else pd.Series(0.0, index=edges.index)
         tx_count = pd.to_numeric(edges["n_tx"], errors="coerce").fillna(0.0) if "n_tx" in edges else pd.Series(0.0, index=edges.index)
         incoming = pd.DataFrame({"gid": edges["dst"], "in_deg": 1, "in_kzt": amount, "in_tx": tx_count}) \
@@ -186,12 +299,14 @@ def priority_table(data: InvestigationData, nodes: pd.DataFrame) -> pd.DataFrame
     gid_col = first_column(table, "gid")
     if gid_col != "gid" and gid_col:
         table = table.rename(columns={gid_col: "gid"})
-    table["gid"] = pd.to_numeric(table["gid"], errors="coerce")
-    table = table.dropna(subset=["gid"])
-    table["gid"] = table["gid"].astype("int64")
+    table["gid"] = exact_ids(table["gid"], "priority_table.gid")
     enrich = [c for c in nodes.columns if c != "gid" and c not in table.columns]
     if enrich:
         table = table.merge(nodes[["gid", *enrich]], on="gid", how="left")
+    if "why" in data.top_nodes and "gid" in data.top_nodes and "why" not in table:
+        reasons = data.top_nodes[["gid", "why"]].copy()
+        reasons["gid"] = exact_ids(reasons["gid"], "top_nodes.gid")
+        table = table.merge(reasons, on="gid", how="left", validate="one_to_one")
     score = first_column(table, "priority_score", "priority")
     if score is None:
         table["priority_score"] = 0.0
@@ -211,6 +326,10 @@ def column_or_default(frame: pd.DataFrame, candidates: Iterable[str], default: o
 
 
 def queue_view(table: pd.DataFrame) -> pd.DataFrame:
+    reasons = column_or_default(table, ["priority_explanation", "why", "evidence"])
+    for name in ("why", "evidence"):
+        if name in table:
+            reasons = reasons.fillna(table[name])
     queue = pd.DataFrame({
         "rank": column_or_default(table, ["rank"]),
         "gid": column_or_default(table, ["gid"]),
@@ -219,7 +338,7 @@ def queue_view(table: pd.DataFrame) -> pd.DataFrame:
         "cluster": column_or_default(table, ["cluster_id", "cluster"]),
         "seed_reach": column_or_default(table, ["seed_reach", "n_seed_reach", "seed_reach_count"]),
         "turnover_kzt": column_or_default(table, ["turnover_kzt", "turnover", "in_out_kzt", "in_kzt"]),
-        "why": column_or_default(table, ["why", "evidence", "priority_explanation"]),
+        "why": reasons,
         "depth": column_or_default(table, ["depth"]),
         "is_seed": column_or_default(table, ["is_seed", "seed"]),
     })
@@ -364,10 +483,13 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
     top[3].metric("Seed", "Yes" if is_seed else "No")
     top[4].metric("Boundary", "Hop-4" if boundary else "Within sample")
     top[5].metric("Depth", fmt_metric(depth, 0))
+    st.caption("Role strength is a heuristic evidence score, not a calibrated probability. Priority is a separate review-ranking score.")
     if boundary:
         st.warning("Outgoing transfers beyond hop 4 are not present in the supplied sample. Do not interpret out_deg=0 as confirmed retention.")
     if is_seed:
         st.info("Seed inflows are incomplete. Flow ratios that depend on them are unavailable.")
+    if value(row, "in_deg") == 0 and value(row, "out_deg") == 0:
+        st.info("Known isolated account: no transfers involving this gid are present in the supplied sample. The peripheral role is a fallback for absent observed activity.")
     st.subheader("Flow and graph evidence")
     fields = [
         ("In / out degree", value(row, "in_deg"), value(row, "out_deg"), "count"),
@@ -382,6 +504,8 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
     ]
     columns = st.columns(3)
     for index, (label, left, right, kind) in enumerate(fields):
+        if label == "Temporal relay" and (boundary or is_seed):
+            left = "Unavailable: sampled flow is incomplete"
         if label == "PageRank percentile" and left is None:
             left = percentile(nodes, "pagerank", gid) if "pagerank" in nodes else MISSING
         if label == "Betweenness percentile" and left is None:
@@ -395,6 +519,9 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
     with left:
         st.subheader("Role evidence")
         st.write(value(row, "evidence", "role_evidence", default="No evidence text was exported."))
+        winning_rule = value(row, "role_rule_explanation", "winning_rule", "rule_explanation")
+        if winning_rule is not None:
+            st.write(winning_rule)
     with right:
         st.subheader("Investigation-priority explanation")
         detail = value(row, "priority_explanation", "priority_decomposition", "why", "evidence",
@@ -407,6 +534,8 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
             })
             st.dataframe(breakdown, hide_index=True, width="stretch")
             st.caption("Exported contributions sum to the displayed priority score.")
+            if value(row, "priority_explanation", "why") is not None:
+                st.write(value(row, "priority_explanation", "why"))
         else:
             st.write(detail)
     st.subheader("Suggested next data request")
@@ -415,11 +544,41 @@ def node_card(data: InvestigationData, nodes: pd.DataFrame) -> None:
         requests.append("Extend outgoing transaction history for this gid beyond hop 4, including counterparties and dates.")
     if is_seed:
         requests.append("Retrieve incoming transfers and opening balance context for this seed; seed inflows are incomplete in this sample.")
+    if value(row, "in_deg") == 0 and value(row, "out_deg") == 0:
+        requests.append("Confirm extract completeness for this isolated gid and request a longer history before interpreting absent activity.")
     if not requests:
         requests.append("Retrieve a longer observation window and KYC / counterparty context for the highest-value adjacent flows.")
     for request in requests:
         st.markdown(f"- {request}")
+    st.caption("The sample only covers intrabank transfers of at least 5,000 KZT during July 2026. Request other banks, smaller transfers and a longer period to assess missing context.")
+    render_temporal_evidence(data, row, gid)
     render_counterparties(data, gid)
+
+
+def render_temporal_evidence(data: InvestigationData, row: pd.Series, gid: int) -> None:
+    with st.expander("Date-level activity and structural evidence"):
+        st.caption("Dates do not establish intraday order or prove that the same funds moved onward. End-of-July receipts may lack the following two days of observations.")
+        fields = [("Active dates", "active_days"), ("Busiest-date share of observed activity", "peak_day_share"),
+                  ("Most distinct senders on one date", "max_in_senders_day"), ("Strongly connected component size", "scc_size")]
+        for label, name in fields:
+            st.write(f"{label}: {fmt_metric(value(row, name))}")
+        st.caption("A strongly connected component indicates possible directed return paths, not dated evidence of returned funds.")
+        if data.transactions.empty:
+            st.info("No dated transactions are loaded.")
+            return
+        tx = data.transactions
+        incoming = tx.loc[tx["dst"] == gid, ["date", "sum_kzt"]].copy()
+        outgoing = tx.loc[tx["src"] == gid, ["date", "sum_kzt"]].copy()
+        if incoming.empty and outgoing.empty:
+            st.info("No sampled dated activity for this gid.")
+            return
+        incoming["date"] = pd.to_datetime(incoming["date"])
+        outgoing["date"] = pd.to_datetime(outgoing["date"])
+        daily = pd.concat([
+            incoming.groupby("date")["sum_kzt"].sum().rename("Incoming KZT"),
+            outgoing.groupby("date")["sum_kzt"].sum().rename("Outgoing KZT"),
+        ], axis=1, sort=False).fillna(0).sort_index()
+        st.bar_chart(daily, stack=False)
 
 
 def render_counterparties(data: InvestigationData, gid: int) -> None:
@@ -448,44 +607,90 @@ def neighborhood(edges: pd.DataFrame, gid: int, hops: int) -> pd.DataFrame:
     return edges[edges["src"].isin(seen) & edges["dst"].isin(seen)].copy()
 
 
-def pyvis_html(edges: pd.DataFrame, nodes: pd.DataFrame, focus_gid: int | None = None) -> str | None:
-    if edges.empty:
-        return None
+def selected_neighborhood(edges: pd.DataFrame, nodes: pd.DataFrame, gid: int,
+                          hops: int, edge_limit: int = 500) -> tuple[pd.DataFrame, pd.DataFrame, bool]:
+    """Bound canvas edges while retaining the selected account, even if isolated."""
+    if gid not in set(nodes["gid"]):
+        raise ValueError("Unknown gid: this identifier is not in the supplied nodes.")
+    selected_edges = neighborhood(edges, gid, hops)
+    truncated = len(selected_edges) > edge_limit
+    if truncated:
+        selected_edges = selected_edges.nlargest(edge_limit, "sum_kzt")
+    members = {gid} | set(selected_edges["src"]) | set(selected_edges["dst"])
+    return selected_edges, nodes[nodes["gid"].isin(members)], truncated
+
+
+def cluster_color(cluster: object) -> str:
+    hue = int(hashlib.sha256(str(cluster).encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF
+    red, green, blue = colorsys.hls_to_rgb(hue, 0.48, 0.65)
+    return f"#{round(red * 255):02x}{round(green * 255):02x}{round(blue * 255):02x}"
+
+
+def pyvis_html(edges: pd.DataFrame, nodes: pd.DataFrame, focus_gid: int | None = None,
+               color_by: str = "Role", highlight_cluster: str | None = None) -> str | None:
+    """Render exactly the selected node records, including disconnected members."""
     try:
         from pyvis.network import Network
     except ImportError:
         return None
-    selected = set(edges["src"]) | set(edges["dst"])
-    attributes = nodes[nodes["gid"].isin(selected)].set_index("gid", drop=False)
+    selected = set(nodes["gid"])
+    attributes = nodes.set_index("gid", drop=False)
     graph = Network(height="650px", width="100%", directed=True, bgcolor="#ffffff", font_color="#172033", cdn_resources="in_line")
     graph.set_options("""{"physics":{"stabilization":{"iterations":150},"barnesHut":{"gravitationalConstant":-5000}},"edges":{"smooth":false,"arrows":{"to":{"enabled":true,"scaleFactor":0.7}}}}""")
     for gid in sorted(selected):
         row = attributes.loc[gid] if gid in attributes.index else pd.Series(dtype=object)
         role = str(value(row, "role", default="unassigned")).lower()
+        cluster = value(row, "cluster_id", "cluster", default=MISSING)
         seed = as_bool(value(row, "is_seed", "seed", default=False))
         priority = as_number(value(row, "priority_score", "priority", default=0))
         label = str(gid) + (" ★" if seed else "")
         title = "<br>".join([f"<b>gid {html.escape(str(gid))}</b>", f"role: {html.escape(role)}",
-                               f"priority: {priority:.3f}", f"seed: {seed}"])
-        graph.add_node(str(gid), label=label, title=title, color={"background": ROLE_COLORS.get(role, "#94a3b8"),
-                       "border": "#111827" if seed else "#ffffff"}, borderWidth=4 if seed else 1,
+                               f"cluster: {html.escape(str(cluster))}", f"priority: {priority:.3f}", f"seed: {seed}"])
+        background = cluster_color(cluster) if color_by == "Cluster" else ROLE_COLORS.get(role, "#94a3b8")
+        highlighted = highlight_cluster is not None and str(cluster) == highlight_cluster
+        if highlight_cluster is not None and not highlighted:
+            background = "#e2e8f0"
+        graph.add_node(str(gid), label=label, title=title, color={"background": background,
+                       "border": "#111827" if seed else "#f59e0b" if highlighted else "#ffffff"}, borderWidth=4 if seed or highlighted else 1,
                        size=12 + min(24, priority * 18) + (7 if gid == focus_gid else 0))
     for edge in edges.itertuples(index=False):
+        if edge.src not in selected or edge.dst not in selected:
+            raise ValueError("Selected graph edges must refer to displayed node records")
         amount, count = as_number(getattr(edge, "sum_kzt", 0)), getattr(edge, "n_tx", "?")
         graph.add_edge(str(edge.src), str(edge.dst), width=max(1, min(10, math.log1p(amount) / 2)),
                        title=f"{amount:,.0f} KZT · {count} transaction(s)")
-    return graph.generate_html(notebook=False)
+    content = graph.generate_html(notebook=False)
+    # PyVis embeds vis-network but its template still adds unused Bootstrap CDN
+    # tags. No filter/select menus use Bootstrap; remove these runtime requests.
+    content = re.sub(r'<script\b[^>]*\bsrc\s*=\s*["\'][^"\']+["\'][^>]*>\s*</script>', "", content, flags=re.I)
+    content = re.sub(r'<link\b[^>]*\bhref\s*=\s*["\'][^"\']+["\'][^>]*>', "", content, flags=re.I)
+    return content
+
+
+def graph_legend(nodes: pd.DataFrame, color_by: str) -> None:
+    roles = " &nbsp; ".join(f'<span style="color:{color}">●</span> {role}' for role, color in ROLE_COLORS.items())
+    st.markdown("Role legend: " + roles, unsafe_allow_html=True)
+    if color_by == "Cluster" and "cluster_id" in nodes:
+        clusters = sorted(nodes["cluster_id"].astype(str).unique())
+        legend = " &nbsp; ".join(f'<span style="color:{cluster_color(cluster)}">●</span> {html.escape(cluster)}' for cluster in clusters)
+        with st.expander(f"Cluster colours ({len(clusters)})", expanded=len(clusters) <= 12):
+            st.markdown(legend, unsafe_allow_html=True)
+    st.caption("★ and a dark border mark seeds. Larger nodes have higher exported priority; arrows show payment direction.")
 
 
 def network_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
     st.title("Network explorer")
-    st.caption("Directed arrows are payment flow. Node colour is exported role; ★ marks a seed.")
-    if data.edges.empty:
+    st.caption("Start with one account or one community, then inspect sampled counterparties.")
+    if nodes.empty:
+        st.info("No supplied nodes are loaded.")
+        return
+    if not {"src", "dst"}.issubset(data.edges.columns):
         st.warning("Source `edges.parquet` is required for network exploration.")
         return
     mode = st.radio("View", ["Selected gid · 1 hop", "Selected gid · 2 hops", "Selected cluster", "Full network (optional)"], horizontal=True, key="network_view")
     gid = st.session_state.get("selected_gid", int(nodes["gid"].iloc[0]) if not nodes.empty else None)
     graph_edges = pd.DataFrame()
+    graph_nodes = nodes.iloc[:0]
     if mode.startswith("Selected gid"):
         if "network_gid_input" not in st.session_state:
             st.session_state["network_gid_input"] = str(gid) if gid is not None else ""
@@ -495,10 +700,15 @@ def network_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
         except ValueError:
             st.info("Enter a valid gid.")
             return
-        graph_edges = neighborhood(data.edges, gid, 1 if "1 hop" in mode else 2)
-        if len(graph_edges) > 500:
-            st.info("This neighborhood is large; showing the 500 highest-turnover sampled edges.")
-            graph_edges = graph_edges.nlargest(500, "sum_kzt")
+        if gid not in set(nodes["gid"]):
+            st.warning("Unknown gid: this identifier is not in the supplied nodes.")
+            return
+        st.session_state["selected_gid"] = gid
+        graph_edges, graph_nodes, truncated = selected_neighborhood(data.edges, nodes, gid, 1 if "1 hop" in mode else 2)
+        if truncated:
+            st.info("This neighborhood is large; showing the 500 highest-turnover sampled edges. The selected gid is retained even if its edges fall outside that limit.")
+        if graph_edges.empty:
+            st.info(f"Known isolated gid {gid}: no incoming or outgoing transfers are present in the supplied sample.")
     elif mode == "Selected cluster":
         cluster_col = first_column(nodes, "cluster_id", "cluster")
         if not cluster_col:
@@ -512,6 +722,7 @@ def network_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
             st.session_state["network_cluster_selection"] = choices[0]
         selected = st.selectbox("Cluster", choices, key="network_cluster_selection")
         members = set(nodes.loc[nodes[cluster_col].astype(str) == selected, "gid"])
+        graph_nodes = nodes[nodes["gid"].isin(members)]
         graph_edges = data.edges[data.edges["src"].isin(members) & data.edges["dst"].isin(members)]
         gid = None
     else:
@@ -519,11 +730,19 @@ def network_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
         if not confirm:
             st.info("Use a neighborhood or cluster for a decision-ready view.")
             return
-        graph_edges, gid = data.edges, None
-    if graph_edges.empty:
-        st.info("No supplied edges match this selection.")
-        return
-    html_graph = pyvis_html(graph_edges, nodes, gid)
+        graph_edges, graph_nodes, gid = data.edges, nodes, None
+    color_by = st.radio("Colour nodes by", ["Role", "Cluster"], horizontal=True)
+    cluster_col = first_column(nodes, "cluster_id", "cluster")
+    highlight = None
+    if cluster_col:
+        cluster_options = sorted(graph_nodes[cluster_col].dropna().astype(str).unique())
+        chosen_highlight = st.selectbox("Highlight cluster", ["All", *cluster_options])
+        highlight = None if chosen_highlight == "All" else chosen_highlight
+    graph_legend(graph_nodes, color_by)
+    st.caption(f"Showing {len(graph_nodes):,} nodes and {len(graph_edges):,} directed edges.")
+    if graph_edges.empty and not mode.startswith("Selected gid"):
+        st.info("These supplied nodes have no internal transfers in the current selection; each member is still displayed.")
+    html_graph = pyvis_html(graph_edges, graph_nodes, gid, color_by, highlight)
     if html_graph is None:
         st.error("Network view needs the optional `pyvis` package: `pip install pyvis`.")
         return
@@ -600,14 +819,32 @@ def ai_page(data: InvestigationData, nodes: pd.DataFrame) -> None:
         st.info("Core investigation features work without an API key. Set `OPENAI_API_KEY` to enable this optional panel.")
         return
     question = st.text_area("Ask about exported evidence", placeholder="Compare gid 101 and gid 202, then explain what to review next.")
+    context = hashlib.sha256(json.dumps({
+        "run_id": data.metadata.get("run_id"), "inputs": data.metadata.get("inputs"), "outputs": data.metadata.get("outputs"),
+    }, sort_keys=True).encode("utf-8")).hexdigest()
     if st.button("Ask grounded assistant", type="primary", disabled=not question.strip()):
+        st.session_state.pop("grounded_answer", None)
         try:
-            from src.ai_assistant import GraphInvestigationTools, answer_question
+            from src.ai_assistant import GraphInvestigationTools, answer_question_result
             tools = GraphInvestigationTools(nodes, data.top_nodes, data.clusters, data.edges)
             with st.spinner("Calling deterministic graph tools…"):
-                st.markdown(answer_question(question, tools))
+                answer = answer_question_result(question, tools)
+            st.session_state["grounded_answer"] = {"context": context, "question": question.strip(), "answer": answer}
         except Exception as exc:
             st.error(f"AI analyst unavailable: {exc}")
+    saved = st.session_state.get("grounded_answer")
+    if isinstance(saved, dict) and saved.get("context") == context:
+        answer = saved["answer"]
+        st.caption(f"Answer to: {saved['question']}")
+        st.markdown(answer.text)
+        known = set(nodes["gid"].astype(str))
+        for gid in answer.node_gids:
+            if gid in known and st.button(f"Open gid {gid}", key=f"ai_gid_{gid}"):
+                nav_to_node(int(gid))
+                st.rerun()
+        if answer.sources:
+            with st.expander("Supporting deterministic results"):
+                st.json(list(answer.sources))
 
 
 def main() -> None:
@@ -635,6 +872,14 @@ def main() -> None:
     except Exception as exc:
         st.error(f"Could not load the supplied files: {exc}")
         st.stop()
+    if data.metadata:
+        st.sidebar.caption(f"Verified run: {data.metadata['run_id']}")
+        st.sidebar.caption(
+            f"Completed: {data.metadata.get('completed_at', 'not recorded')} · "
+            f"Runtime: {data.metadata.get('runtime_seconds', 'not recorded')} s"
+        )
+        with st.sidebar.expander("Run provenance"):
+            st.json(data.metadata)
     if page == "Overview":
         overview_page(data, nodes)
     elif page == "Investigation queue":

@@ -7,7 +7,9 @@ services:
     command: ["python", "pipeline.py", "--data", "/app/data", "--out", "/app/out"]
     volumes:
       - ./data:/app/data:ro
-      - exports:/app/out
+      - ./out:/app/out
+    environment:
+      MONEY_GRAPH_GIT_REVISION: ${MONEY_GRAPH_GIT_REVISION:-unknown}
     restart: "no"
 
   app:
@@ -16,14 +18,15 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
     depends_on:
       analytics:
         condition: service_completed_successfully
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
     volumes:
       - ./data:/app/data:ro
-      - exports:/app/out:ro
+      - ./out:/app/out:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)"]
       interval: 15s
@@ -40,6 +43,4 @@ services:
     image: money-graph:test
     volumes:
       - ./data:/app/data:ro
-
-volumes:
-  exports:
+    network_mode: none

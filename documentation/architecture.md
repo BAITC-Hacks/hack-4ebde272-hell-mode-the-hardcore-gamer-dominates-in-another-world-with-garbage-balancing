@@ -9,12 +9,21 @@ flowchart LR
     L --> R[Analytics-owned role engine]
     R --> Q[Analytics-owned priority engine]
     Q --> E[Deterministic explanations]
-    E --> X[CSV exports<br/>nodes_roles · clusters · top_nodes]
-    X --> UI[Streamlit analyst UI]
+    E --> X[Strict CSV exports<br/>six-field nodes_roles · clusters · top_nodes]
+    E --> FOUT[Auxiliary node_features.parquet<br/>metrics · contribution values · explanations]
+    P --> M[run_metadata.json<br/>input and output SHA-256 · versions · runtime]
+    X --> M
+    FOUT --> M
+    X --> JOIN[Exact gid one-to-one join<br/>CSV decisions authoritative]
+    FOUT --> JOIN
+    M --> CHECK[Provenance and freshness verification]
+    JOIN --> CHECK
+    CHECK --> UI[Streamlit analyst UI<br/>offline embedded assets]
+    X --> S[submission/<br/>three validated CSVs and release manifest]
     G --> UI
     UI --> LLM[Optional grounded LLM assistant]
     LLM --> T[Read-only deterministic graph tools]
-    T --> X
+    T --> JOIN
     T --> G
 ```
 
